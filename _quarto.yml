@@ -1,0 +1,26 @@
+project:
+  type: website
+
+website:
+  title: "Dive into Jimin"
+  navbar:
+    left:
+      - text: "Home"
+        href: index.html
+      - text: "Mini Projects"
+        menu:
+          - text: "Netflix Top 10"
+            href: mp01.html
+          - text: "Making Backyards Affordable for All"
+            href: mp02.html
+          - text: "The Green Canopy of NYC"
+            href: mp03.html
+          - text: "Just the Fact(-Check)s, Ma’am!"
+            href: mp04.html
+      - text: "Visit My Notion"
+        href: "https://gainful-taxicab-12b.notion.site/Dive-into-Jimin-6ffdedb035b74922bce5c7b94c246158"
+
+format:
+  html:
+    theme: minty
+
