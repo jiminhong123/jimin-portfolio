@@ -17,12 +17,17 @@ title: "👋 Welcome"
 
 </div>
 ---
+# 📊 Featured Project
 
+## NYC Medicare Hospital Inequity Dashboard
+
+Analyzed NYC Medicare outpatient hospital data to explore differences in hospital charges, Medicare payments, and patient volume across NYC boroughs.
+
+[**View Interactive Dashboard →**](medicare-dashboard.html)
 
 # 📷 About Me
 - 🎓 Graduate Student @ Baruch College
 - 📊 Interests: Marketing Analytics, Brand Strategy, Digital Marketing
-- 🌏 Cross-cultural experiences bridging Korea and the U.S.
 
 # 🌐 Connect 
 - [LinkedIn](https://www.linkedin.com/in/jimin-hong-8594b7272)
