@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NYC Medicare Hospital Inequity Dashboard</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0b0f1a;
+    --surface: #131929;
+    --surface2: #1a2236;
+    --border: #1f2e47;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --blue: #3b82f6;
+    --purple: #8b5cf6;
+    --teal: #14b8a6;
+    --amber: #f59e0b;
+    --rose: #f43f5e;
+    --green: #22c55e;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    background: linear-gradient(135deg, #0f1e38, #0b1322);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 28px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+  }
+  .header-logo {
+    width: 38px; height: 38px;
+    background: linear-gradient(135deg, var(--blue), var(--purple));
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0;
+  }
+  .header-text h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.02em; }
+  .header-text p  { font-size: 0.72rem; color: var(--muted); margin-top: 1px; }
+  .header-right {
+    margin-left: auto;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .badge {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 20px; padding: 3px 12px;
+    font-size: 0.7rem; color: var(--muted);
+  }
+  .sel-badge {
+    background: rgba(59,130,246,.15); border: 1px solid rgba(59,130,246,.4);
+    border-radius: 20px; padding: 3px 12px;
+    font-size: 0.7rem; color: #60a5fa;
+    display: none;
+  }
+  .sel-badge.on { display: block; }
+
+  /* ── FILTER BAR ── */
+  .filterbar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 28px;
+    display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+    flex-shrink: 0;
+  }
+  .fg { display: flex; align-items: center; gap: 8px; }
+  .fl { font-size: 0.68rem; font-weight: 700; color: var(--muted);
+        text-transform: uppercase; letter-spacing: .07em; white-space: nowrap; }
+  select.fsel {
+    background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); border-radius: 7px;
+    padding: 6px 30px 6px 10px; font-size: 0.82rem; cursor: pointer;
+    appearance: none; -webkit-appearance: none; min-width: 155px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%2364748b' d='M5 7L0 2h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 9px center;
+    transition: border-color .15s;
+  }
+  select.fsel:hover, select.fsel:focus { border-color: var(--blue); outline: none; }
+  .reset-btn {
+    margin-left: auto; background: var(--surface2); border: 1px solid var(--border);
+    color: var(--muted); border-radius: 7px; padding: 6px 14px;
+    font-size: 0.78rem; cursor: pointer; transition: all .15s;
+  }
+  .reset-btn:hover { background: var(--border); color: var(--text); }
+
+  /* ── KPI ROW ── */
+  .kpi-row {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 12px; padding: 14px 28px 0; flex-shrink: 0;
+  }
+  .kpi {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 16px;
+    transition: border-color 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+    position: relative; overflow: hidden;
+  }
+  .kpi-label { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
+  .kpi-val   {
+    font-size: 1.5rem; font-weight: 800; margin-top: 3px; line-height: 1;
+    transition: color 0.2s ease;
+  }
+  .kpi-sub   {
+    font-size: 0.65rem; color: var(--muted); margin-top: 3px;
+    transition: color 0.2s ease;
+  }
+  .kpi.blue  .kpi-val { color: var(--blue);   }
+  .kpi.purple .kpi-val { color: var(--purple); }
+  .kpi.teal  .kpi-val { color: var(--teal);   }
+  .kpi.amber .kpi-val { color: var(--amber);  }
+
+  /* ── KPI ACTIVE (brush selection) state ── */
+  .kpi-row.selection-active .kpi { border-color: rgba(59,130,246,0.45); }
+  .kpi-row.selection-active .kpi.blue  { background: rgba(59,130,246,0.07);  box-shadow: 0 0 0 1px rgba(59,130,246,0.2) inset; }
+  .kpi-row.selection-active .kpi.teal  { background: rgba(20,184,166,0.07);  box-shadow: 0 0 0 1px rgba(20,184,166,0.2) inset; }
+  .kpi-row.selection-active .kpi.amber { background: rgba(245,158,11,0.07);  box-shadow: 0 0 0 1px rgba(245,158,11,0.2) inset; }
+  .kpi-row.selection-active .kpi-sub   { color: #60a5fa; }
+
+  /* Pulse animation on value update */
+  @keyframes kpi-pulse {
+    0%   { opacity: 0.4; transform: scale(0.96); }
+    60%  { opacity: 1;   transform: scale(1.03); }
+    100% { opacity: 1;   transform: scale(1); }
+  }
+  .kpi-val.updating { animation: kpi-pulse 0.3s ease-out forwards; }
+
+  /* ── 2×2 GRID ── */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 12px; padding: 14px 28px 24px;
+    flex: 1; min-height: 0;
+  }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+    display: flex; flex-direction: column; min-height: 360px;
+  }
+  .card-hdr {
+    padding: 11px 16px 9px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 9px; flex-shrink: 0;
+  }
+  .hdr-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .card-title { font-size: 0.8rem; font-weight: 600; color: #cbd5e1; }
+  .card-hint  { font-size: 0.68rem; color: var(--muted); margin-left: auto; }
+  .chart-wrap { flex: 1; min-height: 0; padding: 4px; }
+  .chart-wrap > div { height: 100%; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-logo">🏥</div>
+  <div class="header-text">
+    <h1>NYC Medicare Hospital Inequity Dashboard</h1>
+    <p style="font-size:0.68rem;line-height:1.4;">Medicare Outpatient Hospitals · Medicare CMS Data · Procedure APC Code: Comprehensive Observation Services</p>
+  </div>
+  <div class="header-right">
+    <div class="sel-badge" id="selBadge">Selection active</div>
+    <div class="badge">2018 – 2023</div>
+  </div>
+</div>
+
+<!-- FILTER BAR -->
+<div class="filterbar">
+  <div class="fg">
+    <span class="fl">📅 Year</span>
+    <select class="fsel" id="fYear">
+      <option value="all">All Years</option>
+      <option>2018</option><option>2019</option><option>2020</option>
+      <option>2021</option><option>2022</option><option>2023</option>
+    </select>
+  </div>
+  <div class="fg">
+    <span class="fl">📍 Borough</span>
+    <select class="fsel" id="fCity">
+      <option value="all">All Boroughs</option>
+      <option>Bronx</option><option>Brooklyn</option><option>Elmhurst</option>
+      <option>Far Rockaway</option><option>Flushing</option>
+      <option>Jamaica</option><option>New York</option><option>Staten Island</option>
+    </select>
+  </div>
+  <button class="reset-btn" onclick="resetAll()">↺ Reset</button>
+</div>
+
+<!-- KPI ROW -->
+<div class="kpi-row">
+  <div class="kpi blue">
+    <div class="kpi-label" style="font-size:0.58rem;line-height:1.3;">Number of Hospitals in the selected NYC Boroughs</div>
+    <div class="kpi-val" id="kRecords">—</div>
+    <div class="kpi-sub" id="kRecordsSub">Selected borough</div>
+  </div>
+  <div class="kpi blue">
+    <div class="kpi-label">Avg Submitted Charges</div>
+    <div class="kpi-val" id="kCharge">—</div>
+    <div class="kpi-sub" id="kChargeSub">Per Hospital</div>
+  </div>
+  <div class="kpi teal">
+    <div class="kpi-label">Avg Medicare Payment</div>
+    <div class="kpi-val" id="kPay">—</div>
+    <div class="kpi-sub" id="kPaySub">Per Hospital</div>
+  </div>
+  <div class="kpi amber">
+    <div class="kpi-label">Avg Payment Gap</div>
+    <div class="kpi-val" id="kGap">—</div>
+    <div class="kpi-sub" id="kGapSub">Charges − Payment</div>
+  </div>
+</div>
+
+<!-- 2×2 CHART GRID -->
+<div class="grid">
+
+  <!-- Chart 1: Stacked Bar -->
+  <div class="card">
+    <div class="card-hdr">
+      <div class="hdr-dot" style="background:#3b82f6"></div>
+      <span class="card-title" style="font-size:0.72rem;">NYC Hospital's Medicare Billing by Boroughs' Hospitals for Comp. Obs. Serv. Procedure.</span>
+      <span class="card-hint">drag to brush</span>
+    </div>
+    <div class="chart-wrap"><div id="c1"></div></div>
+  </div>
+
+  <!-- Chart 2: Scatter -->
+  <div class="card">
+    <div class="card-hdr">
+      <div class="hdr-dot" style="background:#f59e0b"></div>
+      <span class="card-title" style="font-size:0.72rem;">Payment Gaps: Hospital Medicare Charges Billed minus(-) Actual Payment by Medicare</span>
+      <span class="card-hint">linked</span>
+    </div>
+    <div class="chart-wrap"><div id="c2"></div></div>
+  </div>
+
+  <!-- Chart 3: Line -->
+  <div class="card">
+    <div class="card-hdr">
+      <div class="hdr-dot" style="background:#14b8a6"></div>
+      <span class="card-title" style="font-size:0.72rem;">Number of Patients Receiving Hospital Services By Borough</span>
+      <span class="card-hint">linked</span>
+    </div>
+    <div class="chart-wrap"><div id="c3"></div></div>
+  </div>
+
+  <!-- Chart 4: Map -->
+  <div class="card">
+    <div class="card-hdr">
+      <div class="hdr-dot" style="background:#8b5cf6"></div>
+      <span class="card-title" style="font-size:0.72rem;">Total Medicare Charges by Hospital for Comp. Obs. Serv. procedure By Borough</span>
+      <span class="card-hint">bubble map</span>
+    </div>
+    <div class="chart-wrap"><div id="c4"></div></div>
+  </div>
+
+</div>
+
+<script>
+// ── RAW DATA ──
+const RAW = [{"zip_code": 10003, " Income_Household_Median ": " 154,262.00 ", "Rndrng_Prvdr_CCN": 330169.0, "Rndrng_Prvdr_Org_Name": "Mount Sinai Beth Israel", "Rndrng_Prvdr_St": "First Avenue At 16th Street", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10003, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 590.0, "CAPC_Srvcs": 691.0, "Avg_Tot_Sbmtd_Chrgs": 16263.28986, "Avg_Mdcr_Alowd_Amt": 2753.715456, "Avg_Mdcr_Pymt_Amt": 2188.781056, "Outlier_Srvcs": 117.0, "Avg_Mdcr_Outlier_Amt": 1740.135325, "Year": 2018, "Income_Household_Median": 154262.0, "lat": 40.7317, "lon": -73.9892}, {"zip_code": 10003, " Income_Household_Median ": " 154,262.00 ", "Rndrng_Prvdr_CCN": 330169.0, "Rndrng_Prvdr_Org_Name": "Mount Sinai Beth Israel", "Rndrng_Prvdr_St": "First Avenue At 16th Street", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10003, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 573.0, "CAPC_Srvcs": 674.0, "Avg_Tot_Sbmtd_Chrgs": 22420.86228, "Avg_Mdcr_Alowd_Amt": 2799.545178, "Avg_Mdcr_Pymt_Amt": 2227.145697, "Outlier_Srvcs": 176.0, "Avg_Mdcr_Outlier_Amt": 2754.733227, "Year": 2019, "Income_Household_Median": 154262.0, "lat": 40.7317, "lon": -73.9892}, {"zip_code": 10003, " Income_Household_Median ": " 154,262.00 ", "Rndrng_Prvdr_CCN": 330169.0, "Rndrng_Prvdr_Org_Name": "Mount Sinai Beth Israel", "Rndrng_Prvdr_St": "First Avenue At 16th Street", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10003, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 253.0, "CAPC_Srvcs": 286.0, "Avg_Tot_Sbmtd_Chrgs": 23494.88769, "Avg_Mdcr_Alowd_Amt": 2645.326014, "Avg_Mdcr_Pymt_Amt": 2335.032762, "Outlier_Srvcs": 81.0, "Avg_Mdcr_Outlier_Amt": 3060.584911, "Year": 2020, "Income_Household_Median": 154262.0, "lat": 40.7317, "lon": -73.9892}, {"zip_code": 10003, " Income_Household_Median ": " 154,262.00 ", "Rndrng_Prvdr_CCN": 330169.0, "Rndrng_Prvdr_Org_Name": "Mount Sinai Beth Israel", "Rndrng_Prvdr_St": "First Avenue At 16th Street", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10003, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 248.0, "CAPC_Srvcs": 274.0, "Avg_Tot_Sbmtd_Chrgs": 28169.1412, "Avg_Mdcr_Alowd_Amt": 2768.24, "Avg_Mdcr_Pymt_Amt": 2533.843796, "Outlier_Srvcs": 52.0, "Avg_Mdcr_Outlier_Amt": 3198.853654, "Year": 2021, "Income_Household_Median": 154262.0, "lat": 40.7317, "lon": -73.9892}, {"zip_code": 10003, " Income_Household_Median ": " 154,262.00 ", "Rndrng_Prvdr_CCN": 330169.0, "Rndrng_Prvdr_Org_Name": "Mount Sinai Beth Israel", "Rndrng_Prvdr_St": "First Avenue At 16th Street", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10003, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 43.0, "CAPC_Srvcs": 51.0, "Avg_Tot_Sbmtd_Chrgs": 35659.01373, "Avg_Mdcr_Alowd_Amt": 2723.189804, "Avg_Mdcr_Pymt_Amt": 2723.189804, "Outlier_Srvcs": 23.0, "Avg_Mdcr_Outlier_Amt": 4403.225113, "Year": 2022, "Income_Household_Median": 154262.0, "lat": 40.7317, "lon": -73.9892}, {"zip_code": 10016, " Income_Household_Median ": " 140,381.00 ", "Rndrng_Prvdr_CCN": 330204.0, "Rndrng_Prvdr_Org_Name": "Bellevue Hospital Center", "Rndrng_Prvdr_St": "462 First Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10016, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 37.0, "CAPC_Srvcs": 38.0, "Avg_Tot_Sbmtd_Chrgs": 10783.08132, "Avg_Mdcr_Alowd_Amt": 2818.186842, "Avg_Mdcr_Pymt_Amt": 2273.540526, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2023, "Income_Household_Median": 140381.0, "lat": 40.7474, "lon": -73.9817}, {"zip_code": 10016, " Income_Household_Median ": " 140,381.00 ", "Rndrng_Prvdr_CCN": 330214.0, "Rndrng_Prvdr_Org_Name": "Nyu Langone Hospitals", "Rndrng_Prvdr_St": "550 First Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10016, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 2629.0, "CAPC_Srvcs": 2753.0, "Avg_Tot_Sbmtd_Chrgs": 44121.86109, "Avg_Mdcr_Alowd_Amt": 2885.848064, "Avg_Mdcr_Pymt_Amt": 2479.910127, "Outlier_Srvcs": 12.0, "Avg_Mdcr_Outlier_Amt": 4628.708233, "Year": 2023, "Income_Household_Median": 140381.0, "lat": 40.7474, "lon": -73.9817}, {"zip_code": 10016, " Income_Household_Median ": " 140,381.00 ", "Rndrng_Prvdr_CCN": 330204.0, "Rndrng_Prvdr_Org_Name": "Bellevue Hospital Center", "Rndrng_Prvdr_St": "462 First Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10016, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 16.0, "CAPC_Srvcs": 16.0, "Avg_Tot_Sbmtd_Chrgs": 9113.21375, "Avg_Mdcr_Alowd_Amt": 2711.683125, "Avg_Mdcr_Pymt_Amt": 2137.36375, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2018, "Income_Household_Median": 140381.0, "lat": 40.7474, "lon": -73.9817}, {"zip_code": 10016, " Income_Household_Median ": " 140,381.00 ", "Rndrng_Prvdr_CCN": 330214.0, "Rndrng_Prvdr_Org_Name": "Nyu Langone Hospitals", "Rndrng_Prvdr_St": "550 First Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10016, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 2285.0, "CAPC_Srvcs": 2498.0, "Avg_Tot_Sbmtd_Chrgs": 37640.45754, "Avg_Mdcr_Alowd_Amt": 2692.729091, "Avg_Mdcr_Pymt_Amt": 2140.810348, "Outlier_Srvcs": 264.0, "Avg_Mdcr_Outlier_Amt": 1831.257994, "Year": 2018, "Income_Household_Median": 140381.0, "lat": 40.7474, "lon": -73.9817}, {"zip_code": 10016, " Income_Household_Median ": " 140,381.00 ", "Rndrng_Prvdr_CCN": 330204.0, "Rndrng_Prvdr_Org_Name": "Bellevue Hospital Center", "Rndrng_Prvdr_St": "462 First Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10016, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 30.0, "CAPC_Srvcs": 30.0, "Avg_Tot_Sbmtd_Chrgs": 8657.781333, "Avg_Mdcr_Alowd_Amt": 2750.962333, "Avg_Mdcr_Pymt_Amt": 2175.777, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2019, "Income_Household_Median": 140381.0, "lat": 40.7474, "lon": -73.9817}, {"zip_code": 10016, " Income_Household_Median ": " 140,381.00 ", "Rndrng_Prvdr_CCN": 330214.0, "Rndrng_Prvdr_Org_Name": "Nyu Langone Hospitals", "Rndrng_Prvdr_St": "550 First Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10016, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 2391.0, "CAPC_Srvcs": 2593.0, "Avg_Tot_Sbmtd_Chrgs": 38582.47599, "Avg_Mdcr_Alowd_Amt": 2738.468565, "Avg_Mdcr_Pymt_Amt": 2178.795557, "Outlier_Srvcs": 100.0, "Avg_Mdcr_Outlier_Amt": 1974.561134, "Year": 2019, "Income_Household_Median": 140381.0, "lat": 40.7474, "lon": -73.9817}, {"zip_code": 10016, " Income_Household_Median ": " 140,381.00 ", "Rndrng_Prvdr_CCN": 330214.0, "Rndrng_Prvdr_Org_Name": "Nyu Langone Hospitals", "Rndrng_Prvdr_St": "550 First Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10016, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 1553.0, "CAPC_Srvcs": 1636.0, "Avg_Tot_Sbmtd_Chrgs": 40648.06776, "Avg_Mdcr_Alowd_Amt": 2635.295819, "Avg_Mdcr_Pymt_Amt": 2400.764548, "Outlier_Srvcs": 54.0, "Avg_Mdcr_Outlier_Amt": 3082.380867, "Year": 2020, "Income_Household_Median": 140381.0, "lat": 40.7474, "lon": -73.9817}, {"zip_code": 10016, " Income_Household_Median ": " 140,381.00 ", "Rndrng_Prvdr_CCN": 330204.0, "Rndrng_Prvdr_Org_Name": "Bellevue Hospital Center", "Rndrng_Prvdr_St": "462 First Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10016, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 21.0, "CAPC_Srvcs": 22.0, "Avg_Tot_Sbmtd_Chrgs": 12698.22, "Avg_Mdcr_Alowd_Amt": 2758.24, "Avg_Mdcr_Pymt_Amt": 2432.259091, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2021, "Income_Household_Median": 140381.0, "lat": 40.7474, "lon": -73.9817}, {"zip_code": 10016, " Income_Household_Median ": " 140,381.00 ", "Rndrng_Prvdr_CCN": 330214.0, "Rndrng_Prvdr_Org_Name": "Nyu Langone Hospitals", "Rndrng_Prvdr_St": "550 First Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10016, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 2285.0, "CAPC_Srvcs": 2429.0, "Avg_Tot_Sbmtd_Chrgs": 40754.20128, "Avg_Mdcr_Alowd_Amt": 2730.615154, "Avg_Mdcr_Pymt_Amt": 2668.31627, "Outlier_Srvcs": 47.0, "Avg_Mdcr_Outlier_Amt": 3462.905745, "Year": 2021, "Income_Household_Median": 140381.0, "lat": 40.7474, "lon": -73.9817}, {"zip_code": 10016, " Income_Household_Median ": " 140,381.00 ", "Rndrng_Prvdr_CCN": 330204.0, "Rndrng_Prvdr_Org_Name": "Bellevue Hospital Center", "Rndrng_Prvdr_St": "462 First Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10016, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 13.0, "CAPC_Srvcs": 13.0, "Avg_Tot_Sbmtd_Chrgs": 9702.229231, "Avg_Mdcr_Alowd_Amt": 2595.561538, "Avg_Mdcr_Pymt_Amt": 2379.3, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2022, "Income_Household_Median": 140381.0, "lat": 40.7474, "lon": -73.9817}, {"zip_code": 10016, " Income_Household_Median ": " 140,381.00 ", "Rndrng_Prvdr_CCN": 330214.0, "Rndrng_Prvdr_Org_Name": "Nyu Langone Hospitals", "Rndrng_Prvdr_St": "550 First Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10016, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 2483.0, "CAPC_Srvcs": 2621.0, "Avg_Tot_Sbmtd_Chrgs": 42443.3384, "Avg_Mdcr_Alowd_Amt": 2701.35425, "Avg_Mdcr_Pymt_Amt": 2588.394964, "Outlier_Srvcs": 42.0, "Avg_Mdcr_Outlier_Amt": 2888.668162, "Year": 2022, "Income_Household_Median": 140381.0, "lat": 40.7474, "lon": -73.9817}, {"zip_code": 10019, " Income_Household_Median ": " 128,559.00 ", "Rndrng_Prvdr_CCN": 330046.0, "Rndrng_Prvdr_Org_Name": "Mount Sinai West", "Rndrng_Prvdr_St": "1000 Tenth Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10019, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 714.0, "CAPC_Srvcs": 807.0, "Avg_Tot_Sbmtd_Chrgs": 16451.83506, "Avg_Mdcr_Alowd_Amt": 2758.233024, "Avg_Mdcr_Pymt_Amt": 2195.153061, "Outlier_Srvcs": 112.0, "Avg_Mdcr_Outlier_Amt": 1798.332025, "Year": 2018, "Income_Household_Median": 128559.0, "lat": 40.7651, "lon": -73.9866}, {"zip_code": 10019, " Income_Household_Median ": " 128,559.00 ", "Rndrng_Prvdr_CCN": 330046.0, "Rndrng_Prvdr_Org_Name": "Mount Sinai West", "Rndrng_Prvdr_St": "1000 Tenth Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10019, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 845.0, "CAPC_Srvcs": 912.0, "Avg_Tot_Sbmtd_Chrgs": 17907.07164, "Avg_Mdcr_Alowd_Amt": 2803.480548, "Avg_Mdcr_Pymt_Amt": 2229.713772, "Outlier_Srvcs": 107.0, "Avg_Mdcr_Outlier_Amt": 2248.834667, "Year": 2019, "Income_Household_Median": 128559.0, "lat": 40.7651, "lon": -73.9866}, {"zip_code": 10019, " Income_Household_Median ": " 128,559.00 ", "Rndrng_Prvdr_CCN": 330046.0, "Rndrng_Prvdr_Org_Name": "Mount Sinai West", "Rndrng_Prvdr_St": "1000 Tenth Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10019, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 363.0, "CAPC_Srvcs": 392.0, "Avg_Tot_Sbmtd_Chrgs": 17652.38824, "Avg_Mdcr_Alowd_Amt": 2641.081122, "Avg_Mdcr_Pymt_Amt": 2403.6775, "Outlier_Srvcs": 51.0, "Avg_Mdcr_Outlier_Amt": 2345.607412, "Year": 2020, "Income_Household_Median": 128559.0, "lat": 40.7651, "lon": -73.9866}, {"zip_code": 10021, " Income_Household_Median ": " 158,677.00 ", "Rndrng_Prvdr_CCN": 330119.0, "Rndrng_Prvdr_Org_Name": "Lenox Hill Hospital", "Rndrng_Prvdr_St": "100 East 77th Street", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10021, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 56.0, "CAPC_Srvcs": 58.0, "Avg_Tot_Sbmtd_Chrgs": 25267.05431, "Avg_Mdcr_Alowd_Amt": 2887.181724, "Avg_Mdcr_Pymt_Amt": 2413.223103, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2023, "Income_Household_Median": 158677.0, "lat": 40.7697, "lon": -73.9566}, {"zip_code": 10021, " Income_Household_Median ": " 158,677.00 ", "Rndrng_Prvdr_CCN": 330119.0, "Rndrng_Prvdr_Org_Name": "Lenox Hill Hospital", "Rndrng_Prvdr_St": "100 East 77th Street", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10021, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 59.0, "CAPC_Srvcs": 60.0, "Avg_Tot_Sbmtd_Chrgs": 17035.56967, "Avg_Mdcr_Alowd_Amt": 2733.155333, "Avg_Mdcr_Pymt_Amt": 2177.631, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2018, "Income_Household_Median": 158677.0, "lat": 40.7697, "lon": -73.9566}, {"zip_code": 10021, " Income_Household_Median ": " 158,677.00 ", "Rndrng_Prvdr_CCN": 330154.0, "Rndrng_Prvdr_Org_Name": "Memorial Hospital For Cancer And Allied Diseases", "Rndrng_Prvdr_St": "1275 York Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10021, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 470.0, "CAPC_Srvcs": 516.0, "Avg_Tot_Sbmtd_Chrgs": 20192.38659, "Avg_Mdcr_Alowd_Amt": 2704.694864, "Avg_Mdcr_Pymt_Amt": 2153.547829, "Outlier_Srvcs": 349.0, "Avg_Mdcr_Outlier_Amt": 2495.720454, "Year": 2018, "Income_Household_Median": 158677.0, "lat": 40.7697, "lon": -73.9566}, {"zip_code": 10021, " Income_Household_Median ": " 158,677.00 ", "Rndrng_Prvdr_CCN": 330119.0, "Rndrng_Prvdr_Org_Name": "Lenox Hill Hospital", "Rndrng_Prvdr_St": "100 East 77th Street", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10021, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 47.0, "CAPC_Srvcs": 49.0, "Avg_Tot_Sbmtd_Chrgs": 16497.2302, "Avg_Mdcr_Alowd_Amt": 2820.471633, "Avg_Mdcr_Pymt_Amt": 2243.642857, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2019, "Income_Household_Median": 158677.0, "lat": 40.7697, "lon": -73.9566}, {"zip_code": 10021, " Income_Household_Median ": " 158,677.00 ", "Rndrng_Prvdr_CCN": 330154.0, "Rndrng_Prvdr_Org_Name": "Memorial Hospital For Cancer And Allied Diseases", "Rndrng_Prvdr_St": "1275 York Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10021, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 518.0, "CAPC_Srvcs": 560.0, "Avg_Tot_Sbmtd_Chrgs": 20869.55307, "Avg_Mdcr_Alowd_Amt": 2746.728857, "Avg_Mdcr_Pymt_Amt": 2187.540464, "Outlier_Srvcs": 310.0, "Avg_Mdcr_Outlier_Amt": 2888.316697, "Year": 2019, "Income_Household_Median": 158677.0, "lat": 40.7697, "lon": -73.9566}, {"zip_code": 10021, " Income_Household_Median ": " 158,677.00 ", "Rndrng_Prvdr_CCN": 330119.0, "Rndrng_Prvdr_Org_Name": "Lenox Hill Hospital", "Rndrng_Prvdr_St": "100 East 77th Street", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10021, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 31.0, "CAPC_Srvcs": 32.0, "Avg_Tot_Sbmtd_Chrgs": 19032.10781, "Avg_Mdcr_Alowd_Amt": 2648.304688, "Avg_Mdcr_Pymt_Amt": 2281.227813, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2020, "Income_Household_Median": 158677.0, "lat": 40.7697, "lon": -73.9566}, {"zip_code": 10021, " Income_Household_Median ": " 158,677.00 ", "Rndrng_Prvdr_CCN": 330119.0, "Rndrng_Prvdr_Org_Name": "Lenox Hill Hospital", "Rndrng_Prvdr_St": "100 East 77th Street", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10021, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 20.0, "CAPC_Srvcs": 21.0, "Avg_Tot_Sbmtd_Chrgs": 18593.05571, "Avg_Mdcr_Alowd_Amt": 2768.24, "Avg_Mdcr_Pymt_Amt": 2504.592381, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2021, "Income_Household_Median": 158677.0, "lat": 40.7697, "lon": -73.9566}, {"zip_code": 10021, " Income_Household_Median ": " 158,677.00 ", "Rndrng_Prvdr_CCN": 330119.0, "Rndrng_Prvdr_Org_Name": "Lenox Hill Hospital", "Rndrng_Prvdr_St": "100 East 77th Street", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10021, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 26.0, "CAPC_Srvcs": 28.0, "Avg_Tot_Sbmtd_Chrgs": 21663.74429, "Avg_Mdcr_Alowd_Amt": 2768.013571, "Avg_Mdcr_Pymt_Amt": 2607.362143, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2022, "Income_Household_Median": 158677.0, "lat": 40.7697, "lon": -73.9566}, {"zip_code": 10029, " Income_Household_Median ": " 38,695.00 ", "Rndrng_Prvdr_CCN": 330024.0, "Rndrng_Prvdr_Org_Name": "Mount Sinai Hospital", "Rndrng_Prvdr_St": "One Gustave L Levy Place", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10029, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 432.0, "CAPC_Srvcs": 475.0, "Avg_Tot_Sbmtd_Chrgs": 24472.80808, "Avg_Mdcr_Alowd_Amt": 2855.728947, "Avg_Mdcr_Pymt_Amt": 2486.681937, "Outlier_Srvcs": 35.0, "Avg_Mdcr_Outlier_Amt": 5099.60612, "Year": 2023, "Income_Household_Median": 38695.0, "lat": 40.7923, "lon": -73.9441}, {"zip_code": 10029, " Income_Household_Median ": " 38,695.00 ", "Rndrng_Prvdr_CCN": 330199.0, "Rndrng_Prvdr_Org_Name": "Metropolitan Hospital Center", "Rndrng_Prvdr_St": "1901 First Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10029, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 79.0, "CAPC_Srvcs": 90.0, "Avg_Tot_Sbmtd_Chrgs": 12791.37656, "Avg_Mdcr_Alowd_Amt": 2874.340222, "Avg_Mdcr_Pymt_Amt": 2540.695333, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2023, "Income_Household_Median": 38695.0, "lat": 40.7923, "lon": -73.9441}, {"zip_code": 10029, " Income_Household_Median ": " 38,695.00 ", "Rndrng_Prvdr_CCN": 330024.0, "Rndrng_Prvdr_Org_Name": "Mount Sinai Hospital", "Rndrng_Prvdr_St": "One Gustave L Levy Place", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10029, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 648.0, "CAPC_Srvcs": 714.0, "Avg_Tot_Sbmtd_Chrgs": 14527.82517, "Avg_Mdcr_Alowd_Amt": 2689.932087, "Avg_Mdcr_Pymt_Amt": 2138.629202, "Outlier_Srvcs": 66.0, "Avg_Mdcr_Outlier_Amt": 1831.736264, "Year": 2018, "Income_Household_Median": 38695.0, "lat": 40.7923, "lon": -73.9441}, {"zip_code": 10029, " Income_Household_Median ": " 38,695.00 ", "Rndrng_Prvdr_CCN": 330024.0, "Rndrng_Prvdr_Org_Name": "Mount Sinai Hospital", "Rndrng_Prvdr_St": "One Gustave L Levy Place", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10029, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 803.0, "CAPC_Srvcs": 913.0, "Avg_Tot_Sbmtd_Chrgs": 18704.10991, "Avg_Mdcr_Alowd_Amt": 2717.609529, "Avg_Mdcr_Pymt_Amt": 2159.785411, "Outlier_Srvcs": 136.0, "Avg_Mdcr_Outlier_Amt": 2767.891319, "Year": 2019, "Income_Household_Median": 38695.0, "lat": 40.7923, "lon": -73.9441}, {"zip_code": 10029, " Income_Household_Median ": " 38,695.00 ", "Rndrng_Prvdr_CCN": 330199.0, "Rndrng_Prvdr_Org_Name": "Metropolitan Hospital Center", "Rndrng_Prvdr_St": "1901 First Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10029, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 61.0, "CAPC_Srvcs": 68.0, "Avg_Tot_Sbmtd_Chrgs": 12276.14662, "Avg_Mdcr_Alowd_Amt": 2750.64, "Avg_Mdcr_Pymt_Amt": 2191.57, "Outlier_Srvcs": 67.0, "Avg_Mdcr_Outlier_Amt": 6666.043666, "Year": 2019, "Income_Household_Median": 38695.0, "lat": 40.7923, "lon": -73.9441}, {"zip_code": 10029, " Income_Household_Median ": " 38,695.00 ", "Rndrng_Prvdr_CCN": 330024.0, "Rndrng_Prvdr_Org_Name": "Mount Sinai Hospital", "Rndrng_Prvdr_St": "One Gustave L Levy Place", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10029, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 560.0, "CAPC_Srvcs": 606.0, "Avg_Tot_Sbmtd_Chrgs": 19907.70033, "Avg_Mdcr_Alowd_Amt": 2564.076832, "Avg_Mdcr_Pymt_Amt": 2363.335693, "Outlier_Srvcs": 140.0, "Avg_Mdcr_Outlier_Amt": 2996.611403, "Year": 2020, "Income_Household_Median": 38695.0, "lat": 40.7923, "lon": -73.9441}, {"zip_code": 10029, " Income_Household_Median ": " 38,695.00 ", "Rndrng_Prvdr_CCN": 330199.0, "Rndrng_Prvdr_Org_Name": "Metropolitan Hospital Center", "Rndrng_Prvdr_St": "1901 First Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10029, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 105.0, "CAPC_Srvcs": 119.0, "Avg_Tot_Sbmtd_Chrgs": 12260.70874, "Avg_Mdcr_Alowd_Amt": 2545.441765, "Avg_Mdcr_Pymt_Amt": 2128.963529, "Outlier_Srvcs": 34.0, "Avg_Mdcr_Outlier_Amt": 5353.530888, "Year": 2020, "Income_Household_Median": 38695.0, "lat": 40.7923, "lon": -73.9441}, {"zip_code": 10029, " Income_Household_Median ": " 38,695.00 ", "Rndrng_Prvdr_CCN": 330024.0, "Rndrng_Prvdr_Org_Name": "Mount Sinai Hospital", "Rndrng_Prvdr_St": "One Gustave L Levy Place", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10029, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 608.0, "CAPC_Srvcs": 657.0, "Avg_Tot_Sbmtd_Chrgs": 21733.15318, "Avg_Mdcr_Alowd_Amt": 2754.041766, "Avg_Mdcr_Pymt_Amt": 2590.899543, "Outlier_Srvcs": 142.0, "Avg_Mdcr_Outlier_Amt": 3058.637887, "Year": 2021, "Income_Household_Median": 38695.0, "lat": 40.7923, "lon": -73.9441}, {"zip_code": 10029, " Income_Household_Median ": " 38,695.00 ", "Rndrng_Prvdr_CCN": 330199.0, "Rndrng_Prvdr_Org_Name": "Metropolitan Hospital Center", "Rndrng_Prvdr_St": "1901 First Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10029, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 80.0, "CAPC_Srvcs": 90.0, "Avg_Tot_Sbmtd_Chrgs": 12705.51678, "Avg_Mdcr_Alowd_Amt": 2758.24, "Avg_Mdcr_Pymt_Amt": 2328.479667, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2021, "Income_Household_Median": 38695.0, "lat": 40.7923, "lon": -73.9441}, {"zip_code": 10029, " Income_Household_Median ": " 38,695.00 ", "Rndrng_Prvdr_CCN": 330024.0, "Rndrng_Prvdr_Org_Name": "Mount Sinai Hospital", "Rndrng_Prvdr_St": "One Gustave L Levy Place", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10029, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 570.0, "CAPC_Srvcs": 626.0, "Avg_Tot_Sbmtd_Chrgs": 24085.26484, "Avg_Mdcr_Alowd_Amt": 2775.53353, "Avg_Mdcr_Pymt_Amt": 2742.299728, "Outlier_Srvcs": 150.0, "Avg_Mdcr_Outlier_Amt": 3598.320223, "Year": 2022, "Income_Household_Median": 38695.0, "lat": 40.7923, "lon": -73.9441}, {"zip_code": 10029, " Income_Household_Median ": " 38,695.00 ", "Rndrng_Prvdr_CCN": 330199.0, "Rndrng_Prvdr_Org_Name": "Metropolitan Hospital Center", "Rndrng_Prvdr_St": "1901 First Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10029, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 83.0, "CAPC_Srvcs": 96.0, "Avg_Tot_Sbmtd_Chrgs": 11388.41438, "Avg_Mdcr_Alowd_Amt": 2779.176667, "Avg_Mdcr_Pymt_Amt": 2542.850313, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2022, "Income_Household_Median": 38695.0, "lat": 40.7923, "lon": -73.9441}, {"zip_code": 10037, " Income_Household_Median ": " 49,153.00 ", "Rndrng_Prvdr_CCN": 330240.0, "Rndrng_Prvdr_Org_Name": "Harlem Hospital Center", "Rndrng_Prvdr_St": "506 Lenox Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10037, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 18.0, "CAPC_Srvcs": 24.0, "Avg_Tot_Sbmtd_Chrgs": 8517.072083, "Avg_Mdcr_Alowd_Amt": 2879.37, "Avg_Mdcr_Pymt_Amt": 2294.13, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2023, "Income_Household_Median": 49153.0, "lat": 40.8133, "lon": -73.9357}, {"zip_code": 10065, " Income_Household_Median ": " 155,331.00 ", "Rndrng_Prvdr_CCN": 330154.0, "Rndrng_Prvdr_Org_Name": "Memorial Hospital For Cancer And Allied Diseases", "Rndrng_Prvdr_St": "1275 York Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10065, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 559.0, "CAPC_Srvcs": 621.0, "Avg_Tot_Sbmtd_Chrgs": 26637.91383, "Avg_Mdcr_Alowd_Amt": 2792.083752, "Avg_Mdcr_Pymt_Amt": 2219.188261, "Outlier_Srvcs": 225.0, "Avg_Mdcr_Outlier_Amt": 4938.398796, "Year": 2023, "Income_Household_Median": 155331.0, "lat": 40.7644, "lon": -73.9629}, {"zip_code": 10065, " Income_Household_Median ": " 155,331.00 ", "Rndrng_Prvdr_CCN": 330154.0, "Rndrng_Prvdr_Org_Name": "Memorial Hospital For Cancer And Allied Diseases", "Rndrng_Prvdr_St": "1275 York Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10065, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 347.0, "CAPC_Srvcs": 369.0, "Avg_Tot_Sbmtd_Chrgs": 22166.22114, "Avg_Mdcr_Alowd_Amt": 2528.906504, "Avg_Mdcr_Pymt_Amt": 2016.988943, "Outlier_Srvcs": 218.0, "Avg_Mdcr_Outlier_Amt": 3087.943897, "Year": 2020, "Income_Household_Median": 155331.0, "lat": 40.7644, "lon": -73.9629}, {"zip_code": 10065, " Income_Household_Median ": " 155,331.00 ", "Rndrng_Prvdr_CCN": 330154.0, "Rndrng_Prvdr_Org_Name": "Memorial Hospital For Cancer And Allied Diseases", "Rndrng_Prvdr_St": "1275 York Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10065, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 566.0, "CAPC_Srvcs": 624.0, "Avg_Tot_Sbmtd_Chrgs": 23717.49965, "Avg_Mdcr_Alowd_Amt": 2733.486603, "Avg_Mdcr_Pymt_Amt": 2183.948397, "Outlier_Srvcs": 363.0, "Avg_Mdcr_Outlier_Amt": 3342.957025, "Year": 2021, "Income_Household_Median": 155331.0, "lat": 40.7644, "lon": -73.9629}, {"zip_code": 10065, " Income_Household_Median ": " 155,331.00 ", "Rndrng_Prvdr_CCN": 330154.0, "Rndrng_Prvdr_Org_Name": "Memorial Hospital For Cancer And Allied Diseases", "Rndrng_Prvdr_St": "1275 York Avenue", "Rndrng_Prvdr_City": "New York", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10065, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 559.0, "CAPC_Srvcs": 644.0, "Avg_Tot_Sbmtd_Chrgs": 25506.39623, "Avg_Mdcr_Alowd_Amt": 2748.779689, "Avg_Mdcr_Pymt_Amt": 2190.611522, "Outlier_Srvcs": 429.0, "Avg_Mdcr_Outlier_Amt": 4079.763728, "Year": 2022, "Income_Household_Median": 155331.0, "lat": 40.7644, "lon": -73.9629}, {"zip_code": 10304, " Income_Household_Median ": " 71,561.00 ", "Rndrng_Prvdr_CCN": 330028.0, "Rndrng_Prvdr_Org_Name": "Richmond University Medical Center", "Rndrng_Prvdr_St": "355 Bard Avenue", "Rndrng_Prvdr_City": "Staten Island", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10304, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 515.0, "CAPC_Srvcs": 640.0, "Avg_Tot_Sbmtd_Chrgs": 12720.28016, "Avg_Mdcr_Alowd_Amt": 2689.525094, "Avg_Mdcr_Pymt_Amt": 2139.504312, "Outlier_Srvcs": 39.0, "Avg_Mdcr_Outlier_Amt": 1543.710072, "Year": 2018, "Income_Household_Median": 71561.0, "lat": 40.6185, "lon": -74.0887}, {"zip_code": 10305, " Income_Household_Median ": " 83,413.00 ", "Rndrng_Prvdr_CCN": 330160.0, "Rndrng_Prvdr_Org_Name": "Staten Island University Hospital", "Rndrng_Prvdr_St": "475 Seaview Avenue", "Rndrng_Prvdr_City": "Staten Island", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10305, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 398.0, "CAPC_Srvcs": 418.0, "Avg_Tot_Sbmtd_Chrgs": 22657.15701, "Avg_Mdcr_Alowd_Amt": 2849.437273, "Avg_Mdcr_Pymt_Amt": 2388.798014, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2023, "Income_Household_Median": 83413.0, "lat": 40.6024, "lon": -74.0798}, {"zip_code": 10305, " Income_Household_Median ": " 83,413.00 ", "Rndrng_Prvdr_CCN": 330160.0, "Rndrng_Prvdr_Org_Name": "Staten Island University Hospital", "Rndrng_Prvdr_St": "475 Seaview Avenue", "Rndrng_Prvdr_City": "Staten Island", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10305, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 431.0, "CAPC_Srvcs": 449.0, "Avg_Tot_Sbmtd_Chrgs": 14193.51824, "Avg_Mdcr_Alowd_Amt": 2692.413608, "Avg_Mdcr_Pymt_Amt": 2140.507817, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2018, "Income_Household_Median": 83413.0, "lat": 40.6024, "lon": -74.0798}, {"zip_code": 10305, " Income_Household_Median ": " 83,413.00 ", "Rndrng_Prvdr_CCN": 330160.0, "Rndrng_Prvdr_Org_Name": "Staten Island University Hospital", "Rndrng_Prvdr_St": "475 Seaview Avenue", "Rndrng_Prvdr_City": "Staten Island", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10305, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 547.0, "CAPC_Srvcs": 577.0, "Avg_Tot_Sbmtd_Chrgs": 15042.24158, "Avg_Mdcr_Alowd_Amt": 2719.809012, "Avg_Mdcr_Pymt_Amt": 2160.917816, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2019, "Income_Household_Median": 83413.0, "lat": 40.6024, "lon": -74.0798}, {"zip_code": 10305, " Income_Household_Median ": " 83,413.00 ", "Rndrng_Prvdr_CCN": 330160.0, "Rndrng_Prvdr_Org_Name": "Staten Island University Hospital", "Rndrng_Prvdr_St": "475 Seaview Avenue", "Rndrng_Prvdr_City": "Staten Island", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10305, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 286.0, "CAPC_Srvcs": 295.0, "Avg_Tot_Sbmtd_Chrgs": 20008.66166, "Avg_Mdcr_Alowd_Amt": 2553.232373, "Avg_Mdcr_Pymt_Amt": 2035.388339, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2020, "Income_Household_Median": 83413.0, "lat": 40.6024, "lon": -74.0798}, {"zip_code": 10305, " Income_Household_Median ": " 83,413.00 ", "Rndrng_Prvdr_CCN": 330160.0, "Rndrng_Prvdr_Org_Name": "Staten Island University Hospital", "Rndrng_Prvdr_St": "475 Seaview Avenue", "Rndrng_Prvdr_City": "Staten Island", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10305, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 271.0, "CAPC_Srvcs": 279.0, "Avg_Tot_Sbmtd_Chrgs": 21400.93907, "Avg_Mdcr_Alowd_Amt": 2734.513333, "Avg_Mdcr_Pymt_Amt": 2182.157204, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2021, "Income_Household_Median": 83413.0, "lat": 40.6024, "lon": -74.0798}, {"zip_code": 10305, " Income_Household_Median ": " 83,413.00 ", "Rndrng_Prvdr_CCN": 330160.0, "Rndrng_Prvdr_Org_Name": "Staten Island University Hospital", "Rndrng_Prvdr_St": "475 Seaview Avenue", "Rndrng_Prvdr_City": "Staten Island", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10305, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 375.0, "CAPC_Srvcs": 396.0, "Avg_Tot_Sbmtd_Chrgs": 22492.53881, "Avg_Mdcr_Alowd_Amt": 2762.173409, "Avg_Mdcr_Pymt_Amt": 2202.2625, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2022, "Income_Household_Median": 83413.0, "lat": 40.6024, "lon": -74.0798}, {"zip_code": 10310, " Income_Household_Median ": " 106,250.00 ", "Rndrng_Prvdr_CCN": 330028.0, "Rndrng_Prvdr_Org_Name": "Richmond University Medical Center", "Rndrng_Prvdr_St": "355 Bard Avenue", "Rndrng_Prvdr_City": "Staten Island", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10310, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 106.0, "CAPC_Srvcs": 114.0, "Avg_Tot_Sbmtd_Chrgs": 27092.36912, "Avg_Mdcr_Alowd_Amt": 2854.832895, "Avg_Mdcr_Pymt_Amt": 2490.341316, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2023, "Income_Household_Median": 106250.0, "lat": 40.6333, "lon": -74.1158}, {"zip_code": 10310, " Income_Household_Median ": " 106,250.00 ", "Rndrng_Prvdr_CCN": 330028.0, "Rndrng_Prvdr_Org_Name": "Richmond University Medical Center", "Rndrng_Prvdr_St": "355 Bard Avenue", "Rndrng_Prvdr_City": "Staten Island", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10310, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 482.0, "CAPC_Srvcs": 609.0, "Avg_Tot_Sbmtd_Chrgs": 14443.561, "Avg_Mdcr_Alowd_Amt": 2720.084828, "Avg_Mdcr_Pymt_Amt": 2159.37642, "Outlier_Srvcs": 23.0, "Avg_Mdcr_Outlier_Amt": 2383.512965, "Year": 2019, "Income_Household_Median": 106250.0, "lat": 40.6333, "lon": -74.1158}, {"zip_code": 10310, " Income_Household_Median ": " 106,250.00 ", "Rndrng_Prvdr_CCN": 330028.0, "Rndrng_Prvdr_Org_Name": "Richmond University Medical Center", "Rndrng_Prvdr_St": "355 Bard Avenue", "Rndrng_Prvdr_City": "Staten Island", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10310, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 307.0, "CAPC_Srvcs": 351.0, "Avg_Tot_Sbmtd_Chrgs": 18492.12692, "Avg_Mdcr_Alowd_Amt": 2500.075385, "Avg_Mdcr_Pymt_Amt": 1978.701311, "Outlier_Srvcs": 31.0, "Avg_Mdcr_Outlier_Amt": 2511.343168, "Year": 2020, "Income_Household_Median": 106250.0, "lat": 40.6333, "lon": -74.1158}, {"zip_code": 10310, " Income_Household_Median ": " 106,250.00 ", "Rndrng_Prvdr_CCN": 330028.0, "Rndrng_Prvdr_Org_Name": "Richmond University Medical Center", "Rndrng_Prvdr_St": "355 Bard Avenue", "Rndrng_Prvdr_City": "Staten Island", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10310, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 251.0, "CAPC_Srvcs": 270.0, "Avg_Tot_Sbmtd_Chrgs": 20825.67844, "Avg_Mdcr_Alowd_Amt": 2750.207259, "Avg_Mdcr_Pymt_Amt": 2252.483185, "Outlier_Srvcs": 43.0, "Avg_Mdcr_Outlier_Amt": 2759.213488, "Year": 2021, "Income_Household_Median": 106250.0, "lat": 40.6333, "lon": -74.1158}, {"zip_code": 10310, " Income_Household_Median ": " 106,250.00 ", "Rndrng_Prvdr_CCN": 330028.0, "Rndrng_Prvdr_Org_Name": "Richmond University Medical Center", "Rndrng_Prvdr_St": "355 Bard Avenue", "Rndrng_Prvdr_City": "Staten Island", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10310, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 127.0, "CAPC_Srvcs": 137.0, "Avg_Tot_Sbmtd_Chrgs": 22914.85197, "Avg_Mdcr_Alowd_Amt": 2742.588321, "Avg_Mdcr_Pymt_Amt": 2713.858686, "Outlier_Srvcs": 18.0, "Avg_Mdcr_Outlier_Amt": 3476.055961, "Year": 2022, "Income_Household_Median": 106250.0, "lat": 40.6333, "lon": -74.1158}, {"zip_code": 10451, " Income_Household_Median ": " 38,770.00 ", "Rndrng_Prvdr_CCN": 330080.0, "Rndrng_Prvdr_Org_Name": "Lincoln Medical & Mental Health Center", "Rndrng_Prvdr_St": "234 East 149th Street", "Rndrng_Prvdr_City": "Bronx", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10451, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 36.0, "CAPC_Srvcs": 38.0, "Avg_Tot_Sbmtd_Chrgs": 11437.24184, "Avg_Mdcr_Alowd_Amt": 2877.617895, "Avg_Mdcr_Pymt_Amt": 2380.026316, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2023, "Income_Household_Median": 38770.0, "lat": 40.8171, "lon": -73.9246}, {"zip_code": 10451, " Income_Household_Median ": " 38,770.00 ", "Rndrng_Prvdr_CCN": 330080.0, "Rndrng_Prvdr_Org_Name": "Lincoln Medical & Mental Health Center", "Rndrng_Prvdr_St": "234 East 149th Street", "Rndrng_Prvdr_City": "Bronx", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10451, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 34.0, "CAPC_Srvcs": 34.0, "Avg_Tot_Sbmtd_Chrgs": 7750.033824, "Avg_Mdcr_Alowd_Amt": 2779.48, "Avg_Mdcr_Pymt_Amt": 2214.54, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2018, "Income_Household_Median": 38770.0, "lat": 40.8171, "lon": -73.9246}, {"zip_code": 10451, " Income_Household_Median ": " 38,770.00 ", "Rndrng_Prvdr_CCN": 330080.0, "Rndrng_Prvdr_Org_Name": "Lincoln Medical & Mental Health Center", "Rndrng_Prvdr_St": "234 East 149th Street", "Rndrng_Prvdr_City": "Bronx", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10451, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 38.0, "CAPC_Srvcs": 41.0, "Avg_Tot_Sbmtd_Chrgs": 9204.39439, "Avg_Mdcr_Alowd_Amt": 2750.70122, "Avg_Mdcr_Pymt_Amt": 2188.576341, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2019, "Income_Household_Median": 38770.0, "lat": 40.8171, "lon": -73.9246}, {"zip_code": 10451, " Income_Household_Median ": " 38,770.00 ", "Rndrng_Prvdr_CCN": 330080.0, "Rndrng_Prvdr_Org_Name": "Lincoln Medical & Mental Health Center", "Rndrng_Prvdr_St": "234 East 149th Street", "Rndrng_Prvdr_City": "Bronx", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10451, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 33.0, "CAPC_Srvcs": 35.0, "Avg_Tot_Sbmtd_Chrgs": 13031.29457, "Avg_Mdcr_Alowd_Amt": 2561.279714, "Avg_Mdcr_Pymt_Amt": 2148.071714, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2020, "Income_Household_Median": 38770.0, "lat": 40.8171, "lon": -73.9246}, {"zip_code": 10451, " Income_Household_Median ": " 38,770.00 ", "Rndrng_Prvdr_CCN": 330080.0, "Rndrng_Prvdr_Org_Name": "Lincoln Medical & Mental Health Center", "Rndrng_Prvdr_St": "234 East 149th Street", "Rndrng_Prvdr_City": "Bronx", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10451, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 39.0, "CAPC_Srvcs": 43.0, "Avg_Tot_Sbmtd_Chrgs": 11981.98558, "Avg_Mdcr_Alowd_Amt": 2758.24, "Avg_Mdcr_Pymt_Amt": 2617.117674, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2021, "Income_Household_Median": 38770.0, "lat": 40.8171, "lon": -73.9246}, {"zip_code": 10451, " Income_Household_Median ": " 38,770.00 ", "Rndrng_Prvdr_CCN": 330080.0, "Rndrng_Prvdr_Org_Name": "Lincoln Medical & Mental Health Center", "Rndrng_Prvdr_St": "234 East 149th Street", "Rndrng_Prvdr_City": "Bronx", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10451, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 12.0, "CAPC_Srvcs": 12.0, "Avg_Tot_Sbmtd_Chrgs": 9966.24, "Avg_Mdcr_Alowd_Amt": 2765.469167, "Avg_Mdcr_Pymt_Amt": 2718.6125, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2022, "Income_Household_Median": 38770.0, "lat": 40.8171, "lon": -73.9246}, {"zip_code": 10467, " Income_Household_Median ": " 49,330.00 ", "Rndrng_Prvdr_CCN": 330059.0, "Rndrng_Prvdr_Org_Name": "Montefiore Medical Center", "Rndrng_Prvdr_St": "111 East 210th Street", "Rndrng_Prvdr_City": "Bronx", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10467, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 80.0, "CAPC_Srvcs": 85.0, "Avg_Tot_Sbmtd_Chrgs": 31880.73647, "Avg_Mdcr_Alowd_Amt": 2938.218118, "Avg_Mdcr_Pymt_Amt": 2340.254588, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2023, "Income_Household_Median": 49330.0, "lat": 40.8782, "lon": -73.8726}, {"zip_code": 10467, " Income_Household_Median ": " 49,330.00 ", "Rndrng_Prvdr_CCN": 330059.0, "Rndrng_Prvdr_Org_Name": "Montefiore Medical Center", "Rndrng_Prvdr_St": "111 East 210th Street", "Rndrng_Prvdr_City": "Bronx", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10467, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 172.0, "CAPC_Srvcs": 173.0, "Avg_Tot_Sbmtd_Chrgs": 19658.11688, "Avg_Mdcr_Alowd_Amt": 2779.496879, "Avg_Mdcr_Pymt_Amt": 2213.710636, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2018, "Income_Household_Median": 49330.0, "lat": 40.8782, "lon": -73.8726}, {"zip_code": 10467, " Income_Household_Median ": " 49,330.00 ", "Rndrng_Prvdr_CCN": 330059.0, "Rndrng_Prvdr_Org_Name": "Montefiore Medical Center", "Rndrng_Prvdr_St": "111 East 210th Street", "Rndrng_Prvdr_City": "Bronx", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10467, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 59.0, "CAPC_Srvcs": 59.0, "Avg_Tot_Sbmtd_Chrgs": 26292.39915, "Avg_Mdcr_Alowd_Amt": 2651.381525, "Avg_Mdcr_Pymt_Amt": 2307.494407, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2020, "Income_Household_Median": 49330.0, "lat": 40.8782, "lon": -73.8726}, {"zip_code": 10467, " Income_Household_Median ": " 49,330.00 ", "Rndrng_Prvdr_CCN": 330059.0, "Rndrng_Prvdr_Org_Name": "Montefiore Medical Center", "Rndrng_Prvdr_St": "111 East 210th Street", "Rndrng_Prvdr_City": "Bronx", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10467, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 62.0, "CAPC_Srvcs": 62.0, "Avg_Tot_Sbmtd_Chrgs": 29736.39919, "Avg_Mdcr_Alowd_Amt": 2768.24, "Avg_Mdcr_Pymt_Amt": 2294.919032, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2021, "Income_Household_Median": 49330.0, "lat": 40.8782, "lon": -73.8726}, {"zip_code": 10467, " Income_Household_Median ": " 49,330.00 ", "Rndrng_Prvdr_CCN": 330059.0, "Rndrng_Prvdr_Org_Name": "Montefiore Medical Center", "Rndrng_Prvdr_St": "111 East 210th Street", "Rndrng_Prvdr_City": "Bronx", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 10467, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 42.0, "CAPC_Srvcs": 42.0, "Avg_Tot_Sbmtd_Chrgs": 29114.62976, "Avg_Mdcr_Alowd_Amt": 2784.482381, "Avg_Mdcr_Pymt_Amt": 2289.140476, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2022, "Income_Household_Median": 49330.0, "lat": 40.8782, "lon": -73.8726}, {"zip_code": 11201, " Income_Household_Median ": " 173,136.00 ", "Rndrng_Prvdr_CCN": 330056.0, "Rndrng_Prvdr_Org_Name": "Brooklyn Hospital Center - Downtown Campus", "Rndrng_Prvdr_St": "121 Dekalb Avenue", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11201, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 13.0, "CAPC_Srvcs": 13.0, "Avg_Tot_Sbmtd_Chrgs": 22563.90308, "Avg_Mdcr_Alowd_Amt": 2875.77, "Avg_Mdcr_Pymt_Amt": 2470.603846, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2023, "Income_Household_Median": 173136.0, "lat": 40.6934, "lon": -73.9892}, {"zip_code": 11201, " Income_Household_Median ": " 173,136.00 ", "Rndrng_Prvdr_CCN": 330056.0, "Rndrng_Prvdr_Org_Name": "Brooklyn Hospital Center - Downtown Campus", "Rndrng_Prvdr_St": "121 Dekalb Avenue", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11201, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 315.0, "CAPC_Srvcs": 354.0, "Avg_Tot_Sbmtd_Chrgs": 20452.93458, "Avg_Mdcr_Alowd_Amt": 2693.779463, "Avg_Mdcr_Pymt_Amt": 2140.442514, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2018, "Income_Household_Median": 173136.0, "lat": 40.6934, "lon": -73.9892}, {"zip_code": 11201, " Income_Household_Median ": " 173,136.00 ", "Rndrng_Prvdr_CCN": 330056.0, "Rndrng_Prvdr_Org_Name": "Brooklyn Hospital Center - Downtown Campus", "Rndrng_Prvdr_St": "121 Dekalb Avenue", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11201, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 171.0, "CAPC_Srvcs": 178.0, "Avg_Tot_Sbmtd_Chrgs": 20170.43455, "Avg_Mdcr_Alowd_Amt": 2750.658202, "Avg_Mdcr_Pymt_Amt": 2190.680281, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2019, "Income_Household_Median": 173136.0, "lat": 40.6934, "lon": -73.9892}, {"zip_code": 11201, " Income_Household_Median ": " 173,136.00 ", "Rndrng_Prvdr_CCN": 330056.0, "Rndrng_Prvdr_Org_Name": "Brooklyn Hospital Center - Downtown Campus", "Rndrng_Prvdr_St": "121 Dekalb Avenue", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11201, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 66.0, "CAPC_Srvcs": 71.0, "Avg_Tot_Sbmtd_Chrgs": 20114.76127, "Avg_Mdcr_Alowd_Amt": 2558.669155, "Avg_Mdcr_Pymt_Amt": 2158.555775, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2020, "Income_Household_Median": 173136.0, "lat": 40.6934, "lon": -73.9892}, {"zip_code": 11201, " Income_Household_Median ": " 173,136.00 ", "Rndrng_Prvdr_CCN": 330056.0, "Rndrng_Prvdr_Org_Name": "Brooklyn Hospital Center - Downtown Campus", "Rndrng_Prvdr_St": "121 Dekalb Avenue", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11201, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 67.0, "CAPC_Srvcs": 69.0, "Avg_Tot_Sbmtd_Chrgs": 18421.95667, "Avg_Mdcr_Alowd_Amt": 2758.24, "Avg_Mdcr_Pymt_Amt": 2266.73, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2021, "Income_Household_Median": 173136.0, "lat": 40.6934, "lon": -73.9892}, {"zip_code": 11201, " Income_Household_Median ": " 173,136.00 ", "Rndrng_Prvdr_CCN": 330056.0, "Rndrng_Prvdr_Org_Name": "Brooklyn Hospital Center - Downtown Campus", "Rndrng_Prvdr_St": "121 Dekalb Avenue", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11201, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 101.0, "CAPC_Srvcs": 109.0, "Avg_Tot_Sbmtd_Chrgs": 20538.85596, "Avg_Mdcr_Alowd_Amt": 2777.505596, "Avg_Mdcr_Pymt_Amt": 2250.115963, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2022, "Income_Household_Median": 173136.0, "lat": 40.6934, "lon": -73.9892}, {"zip_code": 11203, " Income_Household_Median ": " 67,897.00 ", "Rndrng_Prvdr_CCN": 330202.0, "Rndrng_Prvdr_Org_Name": "Kings County Hospital Center", "Rndrng_Prvdr_St": "451 Clarkson Avenue", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11203, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 147.0, "CAPC_Srvcs": 155.0, "Avg_Tot_Sbmtd_Chrgs": 14106.96058, "Avg_Mdcr_Alowd_Amt": 2940.156129, "Avg_Mdcr_Pymt_Amt": 2341.775677, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2023, "Income_Household_Median": 67897.0, "lat": 40.6468, "lon": -73.9385}, {"zip_code": 11203, " Income_Household_Median ": " 67,897.00 ", "Rndrng_Prvdr_CCN": 330350.0, "Rndrng_Prvdr_Org_Name": "Suny Health Science Center At Brooklyn University", "Rndrng_Prvdr_St": "445 Lenox Road", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11203, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 168.0, "CAPC_Srvcs": 193.0, "Avg_Tot_Sbmtd_Chrgs": 11701.87565, "Avg_Mdcr_Alowd_Amt": 2879.40829, "Avg_Mdcr_Pymt_Amt": 2292.252953, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2023, "Income_Household_Median": 67897.0, "lat": 40.6468, "lon": -73.9385}, {"zip_code": 11203, " Income_Household_Median ": " 67,897.00 ", "Rndrng_Prvdr_CCN": 330201.0, "Rndrng_Prvdr_Org_Name": "Kingsbrook Jewish Medical Center", "Rndrng_Prvdr_St": "585 Schenectady Avenue", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11203, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 42.0, "CAPC_Srvcs": 47.0, "Avg_Tot_Sbmtd_Chrgs": 9035.617021, "Avg_Mdcr_Alowd_Amt": 2711.244894, "Avg_Mdcr_Pymt_Amt": 2158.927021, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2018, "Income_Household_Median": 67897.0, "lat": 40.6468, "lon": -73.9385}, {"zip_code": 11203, " Income_Household_Median ": " 67,897.00 ", "Rndrng_Prvdr_CCN": 330202.0, "Rndrng_Prvdr_Org_Name": "Kings County Hospital Center", "Rndrng_Prvdr_St": "451 Clarkson Avenue", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11203, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 14.0, "CAPC_Srvcs": 14.0, "Avg_Tot_Sbmtd_Chrgs": 9593.891429, "Avg_Mdcr_Alowd_Amt": 2711.22, "Avg_Mdcr_Pymt_Amt": 2160.15, "Outlier_Srvcs": 11.0, "Avg_Mdcr_Outlier_Amt": 2824.253091, "Year": 2018, "Income_Household_Median": 67897.0, "lat": 40.6468, "lon": -73.9385}, {"zip_code": 11203, " Income_Household_Median ": " 67,897.00 ", "Rndrng_Prvdr_CCN": 330350.0, "Rndrng_Prvdr_Org_Name": "University Hospital Of Brooklyn ( Downstate )", "Rndrng_Prvdr_St": "445 Lenox Road", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11203, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 386.0, "CAPC_Srvcs": 494.0, "Avg_Tot_Sbmtd_Chrgs": 7288.744919, "Avg_Mdcr_Alowd_Amt": 2687.158603, "Avg_Mdcr_Pymt_Amt": 2136.637348, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2018, "Income_Household_Median": 67897.0, "lat": 40.6468, "lon": -73.9385}, {"zip_code": 11203, " Income_Household_Median ": " 67,897.00 ", "Rndrng_Prvdr_CCN": 330201.0, "Rndrng_Prvdr_Org_Name": "Kingsbrook Jewish Medical Center", "Rndrng_Prvdr_St": "585 Schenectady Avenue", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11203, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 24.0, "CAPC_Srvcs": 29.0, "Avg_Tot_Sbmtd_Chrgs": 8939.373793, "Avg_Mdcr_Alowd_Amt": 2750.64, "Avg_Mdcr_Pymt_Amt": 2191.57, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2019, "Income_Household_Median": 67897.0, "lat": 40.6468, "lon": -73.9385}, {"zip_code": 11203, " Income_Household_Median ": " 67,897.00 ", "Rndrng_Prvdr_CCN": 330350.0, "Rndrng_Prvdr_Org_Name": "University Hospital Of Brooklyn ( Downstate )", "Rndrng_Prvdr_St": "445 Lenox Road", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11203, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 420.0, "CAPC_Srvcs": 543.0, "Avg_Tot_Sbmtd_Chrgs": 7641.728564, "Avg_Mdcr_Alowd_Amt": 2572.829448, "Avg_Mdcr_Pymt_Amt": 2025.002983, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2019, "Income_Household_Median": 67897.0, "lat": 40.6468, "lon": -73.9385}, {"zip_code": 11203, " Income_Household_Median ": " 67,897.00 ", "Rndrng_Prvdr_CCN": 330202.0, "Rndrng_Prvdr_Org_Name": "Kings County Hospital Center", "Rndrng_Prvdr_St": "451 Clarkson Avenue", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11203, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 58.0, "CAPC_Srvcs": 59.0, "Avg_Tot_Sbmtd_Chrgs": 12081.54831, "Avg_Mdcr_Alowd_Amt": 2644.89322, "Avg_Mdcr_Pymt_Amt": 2290.551017, "Outlier_Srvcs": 51.0, "Avg_Mdcr_Outlier_Amt": 6085.737275, "Year": 2020, "Income_Household_Median": 67897.0, "lat": 40.6468, "lon": -73.9385}, {"zip_code": 11203, " Income_Household_Median ": " 67,897.00 ", "Rndrng_Prvdr_CCN": 330350.0, "Rndrng_Prvdr_Org_Name": "Suny Health Science Center At Brooklyn University", "Rndrng_Prvdr_St": "445 Lenox Road", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11203, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 189.0, "CAPC_Srvcs": 221.0, "Avg_Tot_Sbmtd_Chrgs": 9277.937692, "Avg_Mdcr_Alowd_Amt": 2553.592262, "Avg_Mdcr_Pymt_Amt": 2034.446742, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2020, "Income_Household_Median": 67897.0, "lat": 40.6468, "lon": -73.9385}, {"zip_code": 11203, " Income_Household_Median ": " 67,897.00 ", "Rndrng_Prvdr_CCN": 330202.0, "Rndrng_Prvdr_Org_Name": "Kings County Hospital Center", "Rndrng_Prvdr_St": "451 Clarkson Avenue", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11203, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 151.0, "CAPC_Srvcs": 163.0, "Avg_Tot_Sbmtd_Chrgs": 13572.79166, "Avg_Mdcr_Alowd_Amt": 2768.24, "Avg_Mdcr_Pymt_Amt": 2316.493252, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2021, "Income_Household_Median": 67897.0, "lat": 40.6468, "lon": -73.9385}, {"zip_code": 11203, " Income_Household_Median ": " 67,897.00 ", "Rndrng_Prvdr_CCN": 330350.0, "Rndrng_Prvdr_Org_Name": "Suny Health Science Center At Brooklyn University", "Rndrng_Prvdr_St": "445 Lenox Road", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11203, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 184.0, "CAPC_Srvcs": 204.0, "Avg_Tot_Sbmtd_Chrgs": 9574.996667, "Avg_Mdcr_Alowd_Amt": 2748.056078, "Avg_Mdcr_Pymt_Amt": 2195.318627, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2021, "Income_Household_Median": 67897.0, "lat": 40.6468, "lon": -73.9385}, {"zip_code": 11203, " Income_Household_Median ": " 67,897.00 ", "Rndrng_Prvdr_CCN": 330202.0, "Rndrng_Prvdr_Org_Name": "Kings County Hospital Center", "Rndrng_Prvdr_St": "451 Clarkson Avenue", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11203, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 186.0, "CAPC_Srvcs": 198.0, "Avg_Tot_Sbmtd_Chrgs": 13606.73333, "Avg_Mdcr_Alowd_Amt": 2745.408939, "Avg_Mdcr_Pymt_Amt": 2297.291414, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2022, "Income_Household_Median": 67897.0, "lat": 40.6468, "lon": -73.9385}, {"zip_code": 11203, " Income_Household_Median ": " 67,897.00 ", "Rndrng_Prvdr_CCN": 330350.0, "Rndrng_Prvdr_Org_Name": "Suny Health Science Center At Brooklyn University", "Rndrng_Prvdr_St": "445 Lenox Road", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11203, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 179.0, "CAPC_Srvcs": 204.0, "Avg_Tot_Sbmtd_Chrgs": 9757.545245, "Avg_Mdcr_Alowd_Amt": 2768.855784, "Avg_Mdcr_Pymt_Amt": 2207.161765, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2022, "Income_Household_Median": 67897.0, "lat": 40.6468, "lon": -73.9385}, {"zip_code": 11212, " Income_Household_Median ": " 41,355.00 ", "Rndrng_Prvdr_CCN": 330233.0, "Rndrng_Prvdr_Org_Name": "Brookdale Hospital Medical Center", "Rndrng_Prvdr_St": "1 Brookdale Plaza", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11212, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 48.0, "CAPC_Srvcs": 51.0, "Avg_Tot_Sbmtd_Chrgs": 9972.4, "Avg_Mdcr_Alowd_Amt": 2879.37, "Avg_Mdcr_Pymt_Amt": 2294.13, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2023, "Income_Household_Median": 41355.0, "lat": 40.6629, "lon": -73.912}, {"zip_code": 11212, " Income_Household_Median ": " 41,355.00 ", "Rndrng_Prvdr_CCN": 330233.0, "Rndrng_Prvdr_Org_Name": "Brookdale Hospital Medical Center", "Rndrng_Prvdr_St": "1 Brookdale Plaza", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11212, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 209.0, "CAPC_Srvcs": 225.0, "Avg_Tot_Sbmtd_Chrgs": 9280.134044, "Avg_Mdcr_Alowd_Amt": 2683.120489, "Avg_Mdcr_Pymt_Amt": 2128.800356, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2018, "Income_Household_Median": 41355.0, "lat": 40.6629, "lon": -73.912}, {"zip_code": 11212, " Income_Household_Median ": " 41,355.00 ", "Rndrng_Prvdr_CCN": 330233.0, "Rndrng_Prvdr_Org_Name": "Brookdale Hospital Medical Center", "Rndrng_Prvdr_St": "1 Brookdale Plaza", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11212, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 185.0, "CAPC_Srvcs": 199.0, "Avg_Tot_Sbmtd_Chrgs": 8846.611859, "Avg_Mdcr_Alowd_Amt": 2728.634221, "Avg_Mdcr_Pymt_Amt": 2168.56201, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2019, "Income_Household_Median": 41355.0, "lat": 40.6629, "lon": -73.912}, {"zip_code": 11212, " Income_Household_Median ": " 41,355.00 ", "Rndrng_Prvdr_CCN": 330233.0, "Rndrng_Prvdr_Org_Name": "Brookdale Hospital Medical Center", "Rndrng_Prvdr_St": "1 Brookdale Plaza", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11212, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 62.0, "CAPC_Srvcs": 64.0, "Avg_Tot_Sbmtd_Chrgs": 9710.638125, "Avg_Mdcr_Alowd_Amt": 2568.349219, "Avg_Mdcr_Pymt_Amt": 2204.03, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2020, "Income_Household_Median": 41355.0, "lat": 40.6629, "lon": -73.912}, {"zip_code": 11212, " Income_Household_Median ": " 41,355.00 ", "Rndrng_Prvdr_CCN": 330233.0, "Rndrng_Prvdr_Org_Name": "Brookdale Hospital Medical Center", "Rndrng_Prvdr_St": "1 Brookdale Plaza", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11212, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 18.0, "CAPC_Srvcs": 19.0, "Avg_Tot_Sbmtd_Chrgs": 10580.03316, "Avg_Mdcr_Alowd_Amt": 2758.24, "Avg_Mdcr_Pymt_Amt": 2235.614737, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2021, "Income_Household_Median": 41355.0, "lat": 40.6629, "lon": -73.912}, {"zip_code": 11212, " Income_Household_Median ": " 41,355.00 ", "Rndrng_Prvdr_CCN": 330233.0, "Rndrng_Prvdr_Org_Name": "Brookdale Hospital Medical Center", "Rndrng_Prvdr_St": "1 Brookdale Plaza", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11212, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 24.0, "CAPC_Srvcs": 24.0, "Avg_Tot_Sbmtd_Chrgs": 9853.4775, "Avg_Mdcr_Alowd_Amt": 2778.592083, "Avg_Mdcr_Pymt_Amt": 2208.545417, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2022, "Income_Household_Median": 41355.0, "lat": 40.6629, "lon": -73.912}, {"zip_code": 11219, " Income_Household_Median ": " 58,347.00 ", "Rndrng_Prvdr_CCN": 330194.0, "Rndrng_Prvdr_Org_Name": "Maimonides Medical Center", "Rndrng_Prvdr_St": "4802 Tenth Avenue", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11219, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 534.0, "CAPC_Srvcs": 562.0, "Avg_Tot_Sbmtd_Chrgs": 22106.54265, "Avg_Mdcr_Alowd_Amt": 2870.579786, "Avg_Mdcr_Pymt_Amt": 2316.656584, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2023, "Income_Household_Median": 58347.0, "lat": 40.634, "lon": -73.999}, {"zip_code": 11219, " Income_Household_Median ": " 58,347.00 ", "Rndrng_Prvdr_CCN": 330194.0, "Rndrng_Prvdr_Org_Name": "Maimonides Medical Center", "Rndrng_Prvdr_St": "4802 Tenth Avenue", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11219, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 693.0, "CAPC_Srvcs": 735.0, "Avg_Tot_Sbmtd_Chrgs": 9896.716503, "Avg_Mdcr_Alowd_Amt": 2767.432367, "Avg_Mdcr_Pymt_Amt": 2202.277361, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2018, "Income_Household_Median": 58347.0, "lat": 40.634, "lon": -73.999}, {"zip_code": 11219, " Income_Household_Median ": " 58,347.00 ", "Rndrng_Prvdr_CCN": 330194.0, "Rndrng_Prvdr_Org_Name": "Maimonides Medical Center", "Rndrng_Prvdr_St": "4802 Tenth Avenue", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11219, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 741.0, "CAPC_Srvcs": 800.0, "Avg_Tot_Sbmtd_Chrgs": 12707.31366, "Avg_Mdcr_Alowd_Amt": 2806.383737, "Avg_Mdcr_Pymt_Amt": 2231.7126, "Outlier_Srvcs": 15.0, "Avg_Mdcr_Outlier_Amt": 2100.722773, "Year": 2019, "Income_Household_Median": 58347.0, "lat": 40.634, "lon": -73.999}, {"zip_code": 11219, " Income_Household_Median ": " 58,347.00 ", "Rndrng_Prvdr_CCN": 330194.0, "Rndrng_Prvdr_Org_Name": "Maimonides Medical Center", "Rndrng_Prvdr_St": "4802 Tenth Avenue", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11219, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 357.0, "CAPC_Srvcs": 365.0, "Avg_Tot_Sbmtd_Chrgs": 18236.80666, "Avg_Mdcr_Alowd_Amt": 2653.014795, "Avg_Mdcr_Pymt_Amt": 2378.004274, "Outlier_Srvcs": 20.0, "Avg_Mdcr_Outlier_Amt": 2304.90698, "Year": 2020, "Income_Household_Median": 58347.0, "lat": 40.634, "lon": -73.999}, {"zip_code": 11219, " Income_Household_Median ": " 58,347.00 ", "Rndrng_Prvdr_CCN": 330194.0, "Rndrng_Prvdr_Org_Name": "Maimonides Medical Center", "Rndrng_Prvdr_St": "4802 Tenth Avenue", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11219, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 260.0, "CAPC_Srvcs": 269.0, "Avg_Tot_Sbmtd_Chrgs": 17425.49283, "Avg_Mdcr_Alowd_Amt": 2768.24, "Avg_Mdcr_Pymt_Amt": 2523.172045, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2021, "Income_Household_Median": 58347.0, "lat": 40.634, "lon": -73.999}, {"zip_code": 11219, " Income_Household_Median ": " 58,347.00 ", "Rndrng_Prvdr_CCN": 330194.0, "Rndrng_Prvdr_Org_Name": "Maimonides Medical Center", "Rndrng_Prvdr_St": "4802 Tenth Avenue", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11219, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 465.0, "CAPC_Srvcs": 493.0, "Avg_Tot_Sbmtd_Chrgs": 20730.55178, "Avg_Mdcr_Alowd_Amt": 2781.258458, "Avg_Mdcr_Pymt_Amt": 2367.047688, "Outlier_Srvcs": 17.0, "Avg_Mdcr_Outlier_Amt": 2639.219776, "Year": 2022, "Income_Household_Median": 58347.0, "lat": 40.634, "lon": -73.999}, {"zip_code": 11229, " Income_Household_Median ": " 70,603.00 ", "Rndrng_Prvdr_CCN": 330019.0, "Rndrng_Prvdr_Org_Name": "New York Community Hospital Of Brooklyn, Inc.", "Rndrng_Prvdr_St": "2525 Kings Highway", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11229, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 104.0, "CAPC_Srvcs": 114.0, "Avg_Tot_Sbmtd_Chrgs": 13565.52798, "Avg_Mdcr_Alowd_Amt": 2879.407807, "Avg_Mdcr_Pymt_Amt": 2292.279386, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2023, "Income_Household_Median": 70603.0, "lat": 40.5992, "lon": -73.9457}, {"zip_code": 11229, " Income_Household_Median ": " 70,603.00 ", "Rndrng_Prvdr_CCN": 330019.0, "Rndrng_Prvdr_Org_Name": "New York Community Hospital Of Brooklyn, Inc.", "Rndrng_Prvdr_St": "2525 Kings Highway", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11229, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 55.0, "CAPC_Srvcs": 60.0, "Avg_Tot_Sbmtd_Chrgs": 9241.428667, "Avg_Mdcr_Alowd_Amt": 2779.48, "Avg_Mdcr_Pymt_Amt": 2214.54, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2018, "Income_Household_Median": 70603.0, "lat": 40.5992, "lon": -73.9457}, {"zip_code": 11229, " Income_Household_Median ": " 70,603.00 ", "Rndrng_Prvdr_CCN": 330019.0, "Rndrng_Prvdr_Org_Name": "New York Community Hospital Of Brooklyn, Inc.", "Rndrng_Prvdr_St": "2525 Kings Highway", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11229, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 25.0, "CAPC_Srvcs": 26.0, "Avg_Tot_Sbmtd_Chrgs": 7827.913846, "Avg_Mdcr_Alowd_Amt": 2647.542308, "Avg_Mdcr_Pymt_Amt": 2074.292308, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2019, "Income_Household_Median": 70603.0, "lat": 40.5992, "lon": -73.9457}, {"zip_code": 11229, " Income_Household_Median ": " 70,603.00 ", "Rndrng_Prvdr_CCN": 330019.0, "Rndrng_Prvdr_Org_Name": "New York Community Hospital Of Brooklyn, Inc.", "Rndrng_Prvdr_St": "2525 Kings Highway", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11229, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 19.0, "CAPC_Srvcs": 20.0, "Avg_Tot_Sbmtd_Chrgs": 12645.9555, "Avg_Mdcr_Alowd_Amt": 2766.41, "Avg_Mdcr_Pymt_Amt": 2204.13, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2022, "Income_Household_Median": 70603.0, "lat": 40.5992, "lon": -73.9457}, {"zip_code": 11235, " Income_Household_Median ": " 59,661.00 ", "Rndrng_Prvdr_CCN": 330196.0, "Rndrng_Prvdr_Org_Name": "South Brooklyn Health", "Rndrng_Prvdr_St": "2601 Ocean Parkway", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11235, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 136.0, "CAPC_Srvcs": 143.0, "Avg_Tot_Sbmtd_Chrgs": 8238.033776, "Avg_Mdcr_Alowd_Amt": 2875.318322, "Avg_Mdcr_Pymt_Amt": 2492.748531, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2023, "Income_Household_Median": 59661.0, "lat": 40.5823, "lon": -73.9511}, {"zip_code": 11235, " Income_Household_Median ": " 59,661.00 ", "Rndrng_Prvdr_CCN": 330196.0, "Rndrng_Prvdr_Org_Name": "Coney Island Hospital", "Rndrng_Prvdr_St": "2601 Ocean Parkway", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11235, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 153.0, "CAPC_Srvcs": 188.0, "Avg_Tot_Sbmtd_Chrgs": 5522.282766, "Avg_Mdcr_Alowd_Amt": 2699.741277, "Avg_Mdcr_Pymt_Amt": 2148.098032, "Outlier_Srvcs": 11.0, "Avg_Mdcr_Outlier_Amt": 3223.6218, "Year": 2018, "Income_Household_Median": 59661.0, "lat": 40.5823, "lon": -73.9511}, {"zip_code": 11235, " Income_Household_Median ": " 59,661.00 ", "Rndrng_Prvdr_CCN": 330196.0, "Rndrng_Prvdr_Org_Name": "Coney Island Hospital Center", "Rndrng_Prvdr_St": "2601 Ocean Parkway", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11235, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 242.0, "CAPC_Srvcs": 296.0, "Avg_Tot_Sbmtd_Chrgs": 6813.49277, "Avg_Mdcr_Alowd_Amt": 2733.964966, "Avg_Mdcr_Pymt_Amt": 2175.703277, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2019, "Income_Household_Median": 59661.0, "lat": 40.5823, "lon": -73.9511}, {"zip_code": 11235, " Income_Household_Median ": " 59,661.00 ", "Rndrng_Prvdr_CCN": 330196.0, "Rndrng_Prvdr_Org_Name": "South Brooklyn Health", "Rndrng_Prvdr_St": "2601 Ocean Parkway", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11235, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 198.0, "CAPC_Srvcs": 221.0, "Avg_Tot_Sbmtd_Chrgs": 8350.140814, "Avg_Mdcr_Alowd_Amt": 2559.197149, "Avg_Mdcr_Pymt_Amt": 2206.546742, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2020, "Income_Household_Median": 59661.0, "lat": 40.5823, "lon": -73.9511}, {"zip_code": 11235, " Income_Household_Median ": " 59,661.00 ", "Rndrng_Prvdr_CCN": 330196.0, "Rndrng_Prvdr_Org_Name": "South Brooklyn Health", "Rndrng_Prvdr_St": "2601 Ocean Parkway", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11235, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 245.0, "CAPC_Srvcs": 302.0, "Avg_Tot_Sbmtd_Chrgs": 9057.54202, "Avg_Mdcr_Alowd_Amt": 2739.97351, "Avg_Mdcr_Pymt_Amt": 2495.539272, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2021, "Income_Household_Median": 59661.0, "lat": 40.5823, "lon": -73.9511}, {"zip_code": 11235, " Income_Household_Median ": " 59,661.00 ", "Rndrng_Prvdr_CCN": 330196.0, "Rndrng_Prvdr_Org_Name": "South Brooklyn Health", "Rndrng_Prvdr_St": "2601 Ocean Parkway", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11235, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 235.0, "CAPC_Srvcs": 253.0, "Avg_Tot_Sbmtd_Chrgs": 10039.81573, "Avg_Mdcr_Alowd_Amt": 2779.116561, "Avg_Mdcr_Pymt_Amt": 2624.395771, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2022, "Income_Household_Median": 59661.0, "lat": 40.5823, "lon": -73.9511}, {"zip_code": 11237, " Income_Household_Median ": " 85,196.00 ", "Rndrng_Prvdr_CCN": 330221.0, "Rndrng_Prvdr_Org_Name": "Wyckoff Heights Medical Center", "Rndrng_Prvdr_St": "374 Stockholm Street", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11237, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 20.0, "CAPC_Srvcs": 20.0, "Avg_Tot_Sbmtd_Chrgs": 11585.574, "Avg_Mdcr_Alowd_Amt": 2711.5035, "Avg_Mdcr_Pymt_Amt": 2146.216, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2018, "Income_Household_Median": 85196.0, "lat": 40.7048, "lon": -73.9249}, {"zip_code": 11237, " Income_Household_Median ": " 85,196.00 ", "Rndrng_Prvdr_CCN": 330221.0, "Rndrng_Prvdr_Org_Name": "Wyckoff Heights Medical Center", "Rndrng_Prvdr_St": "374 Stockholm Street", "Rndrng_Prvdr_City": "Brooklyn", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11237, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 31.0, "CAPC_Srvcs": 33.0, "Avg_Tot_Sbmtd_Chrgs": 8904.046364, "Avg_Mdcr_Alowd_Amt": 2684.314242, "Avg_Mdcr_Pymt_Amt": 2120.98, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2019, "Income_Household_Median": 85196.0, "lat": 40.7048, "lon": -73.9249}, {"zip_code": 11355, " Income_Household_Median ": " 55,326.00 ", "Rndrng_Prvdr_CCN": 330193.0, "Rndrng_Prvdr_Org_Name": "Flushing Hospital Medical Center", "Rndrng_Prvdr_St": "45th Avenue And Parsons Boulevard", "Rndrng_Prvdr_City": "Flushing", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11355, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 163.0, "CAPC_Srvcs": 169.0, "Avg_Tot_Sbmtd_Chrgs": 13131.49633, "Avg_Mdcr_Alowd_Amt": 2875.148817, "Avg_Mdcr_Pymt_Amt": 2501.055503, "Outlier_Srvcs": 20.0, "Avg_Mdcr_Outlier_Amt": 4451.34914, "Year": 2023, "Income_Household_Median": 55326.0, "lat": 40.7457, "lon": -73.8303}, {"zip_code": 11355, " Income_Household_Median ": " 55,326.00 ", "Rndrng_Prvdr_CCN": 330193.0, "Rndrng_Prvdr_Org_Name": "Flushing Hospital Medical Center", "Rndrng_Prvdr_St": "45th Avenue And Parsons Boulevard", "Rndrng_Prvdr_City": "Flushing", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11355, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 74.0, "CAPC_Srvcs": 76.0, "Avg_Tot_Sbmtd_Chrgs": 9200.723684, "Avg_Mdcr_Alowd_Amt": 2750.385, "Avg_Mdcr_Pymt_Amt": 2183.250395, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2018, "Income_Household_Median": 55326.0, "lat": 40.7457, "lon": -73.8303}, {"zip_code": 11355, " Income_Household_Median ": " 55,326.00 ", "Rndrng_Prvdr_CCN": 330193.0, "Rndrng_Prvdr_Org_Name": "Flushing Hospital Medical Center", "Rndrng_Prvdr_St": "45th Avenue And Parsons Boulevard", "Rndrng_Prvdr_City": "Flushing", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11355, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 136.0, "CAPC_Srvcs": 146.0, "Avg_Tot_Sbmtd_Chrgs": 9684.245342, "Avg_Mdcr_Alowd_Amt": 2820.438356, "Avg_Mdcr_Pymt_Amt": 2245.270274, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2019, "Income_Household_Median": 55326.0, "lat": 40.7457, "lon": -73.8303}, {"zip_code": 11355, " Income_Household_Median ": " 55,326.00 ", "Rndrng_Prvdr_CCN": 330193.0, "Rndrng_Prvdr_Org_Name": "Flushing Hospital Medical Center", "Rndrng_Prvdr_St": "45th Avenue And Parsons Boulevard", "Rndrng_Prvdr_City": "Flushing", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11355, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 71.0, "CAPC_Srvcs": 74.0, "Avg_Tot_Sbmtd_Chrgs": 11036.46257, "Avg_Mdcr_Alowd_Amt": 2618.866622, "Avg_Mdcr_Pymt_Amt": 2330.255811, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2020, "Income_Household_Median": 55326.0, "lat": 40.7457, "lon": -73.8303}, {"zip_code": 11355, " Income_Household_Median ": " 55,326.00 ", "Rndrng_Prvdr_CCN": 330193.0, "Rndrng_Prvdr_Org_Name": "Flushing Hospital Medical Center", "Rndrng_Prvdr_St": "45th Avenue And Parsons Boulevard", "Rndrng_Prvdr_City": "Flushing", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11355, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 85.0, "CAPC_Srvcs": 85.0, "Avg_Tot_Sbmtd_Chrgs": 12467.15282, "Avg_Mdcr_Alowd_Amt": 2768.24, "Avg_Mdcr_Pymt_Amt": 2709.617176, "Outlier_Srvcs": 15.0, "Avg_Mdcr_Outlier_Amt": 2534.583333, "Year": 2021, "Income_Household_Median": 55326.0, "lat": 40.7457, "lon": -73.8303}, {"zip_code": 11355, " Income_Household_Median ": " 55,326.00 ", "Rndrng_Prvdr_CCN": 330193.0, "Rndrng_Prvdr_Org_Name": "Flushing Hospital Medical Center", "Rndrng_Prvdr_St": "45th Avenue And Parsons Boulevard", "Rndrng_Prvdr_City": "Flushing", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11355, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 165.0, "CAPC_Srvcs": 174.0, "Avg_Tot_Sbmtd_Chrgs": 13116.72667, "Avg_Mdcr_Alowd_Amt": 2757.423736, "Avg_Mdcr_Pymt_Amt": 2738.03477, "Outlier_Srvcs": 66.0, "Avg_Mdcr_Outlier_Amt": 3052.131758, "Year": 2022, "Income_Household_Median": 55326.0, "lat": 40.7457, "lon": -73.8303}, {"zip_code": 11373, " Income_Household_Median ": " 71,480.00 ", "Rndrng_Prvdr_CCN": 330128.0, "Rndrng_Prvdr_Org_Name": "Elmhurst Hospital Center", "Rndrng_Prvdr_St": "79-01 Broadway", "Rndrng_Prvdr_City": "Elmhurst", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11373, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 72.0, "CAPC_Srvcs": 77.0, "Avg_Tot_Sbmtd_Chrgs": 10434.86636, "Avg_Mdcr_Alowd_Amt": 2879.543766, "Avg_Mdcr_Pymt_Amt": 2285.624026, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2023, "Income_Household_Median": 71480.0, "lat": 40.7356, "lon": -73.8718}, {"zip_code": 11373, " Income_Household_Median ": " 71,480.00 ", "Rndrng_Prvdr_CCN": 330128.0, "Rndrng_Prvdr_Org_Name": "Elmhurst Hospital Center", "Rndrng_Prvdr_St": "79-01 Broadway", "Rndrng_Prvdr_City": "Elmhurst", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11373, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 75.0, "CAPC_Srvcs": 77.0, "Avg_Tot_Sbmtd_Chrgs": 8087.427273, "Avg_Mdcr_Alowd_Amt": 2779.52974, "Avg_Mdcr_Pymt_Amt": 2212.094935, "Outlier_Srvcs": 75.0, "Avg_Mdcr_Outlier_Amt": 4195.04484, "Year": 2018, "Income_Household_Median": 71480.0, "lat": 40.7356, "lon": -73.8718}, {"zip_code": 11373, " Income_Household_Median ": " 71,480.00 ", "Rndrng_Prvdr_CCN": 330128.0, "Rndrng_Prvdr_Org_Name": "Elmhurst Hospital Center", "Rndrng_Prvdr_St": "79-01 Broadway", "Rndrng_Prvdr_City": "Elmhurst", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11373, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 104.0, "CAPC_Srvcs": 109.0, "Avg_Tot_Sbmtd_Chrgs": 8691.817156, "Avg_Mdcr_Alowd_Amt": 2820.410734, "Avg_Mdcr_Pymt_Amt": 2246.619725, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2019, "Income_Household_Median": 71480.0, "lat": 40.7356, "lon": -73.8718}, {"zip_code": 11373, " Income_Household_Median ": " 71,480.00 ", "Rndrng_Prvdr_CCN": 330128.0, "Rndrng_Prvdr_Org_Name": "Elmhurst Hospital Center", "Rndrng_Prvdr_St": "79-01 Broadway", "Rndrng_Prvdr_City": "Elmhurst", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11373, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 38.0, "CAPC_Srvcs": 38.0, "Avg_Tot_Sbmtd_Chrgs": 9850.426316, "Avg_Mdcr_Alowd_Amt": 2641.852368, "Avg_Mdcr_Pymt_Amt": 2261.941579, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2020, "Income_Household_Median": 71480.0, "lat": 40.7356, "lon": -73.8718}, {"zip_code": 11373, " Income_Household_Median ": " 71,480.00 ", "Rndrng_Prvdr_CCN": 330128.0, "Rndrng_Prvdr_Org_Name": "Elmhurst Hospital Center", "Rndrng_Prvdr_St": "79-01 Broadway", "Rndrng_Prvdr_City": "Elmhurst", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11373, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 45.0, "CAPC_Srvcs": 46.0, "Avg_Tot_Sbmtd_Chrgs": 10222.67717, "Avg_Mdcr_Alowd_Amt": 2768.24, "Avg_Mdcr_Pymt_Amt": 2354.619348, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2021, "Income_Household_Median": 71480.0, "lat": 40.7356, "lon": -73.8718}, {"zip_code": 11373, " Income_Household_Median ": " 71,480.00 ", "Rndrng_Prvdr_CCN": 330128.0, "Rndrng_Prvdr_Org_Name": "Elmhurst Hospital Center", "Rndrng_Prvdr_St": "79-01 Broadway", "Rndrng_Prvdr_City": "Elmhurst", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11373, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 56.0, "CAPC_Srvcs": 58.0, "Avg_Tot_Sbmtd_Chrgs": 10802.16914, "Avg_Mdcr_Alowd_Amt": 2641.662586, "Avg_Mdcr_Pymt_Amt": 2142.911897, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2022, "Income_Household_Median": 71480.0, "lat": 40.7356, "lon": -73.8718}, {"zip_code": 11418, " Income_Household_Median ": " 90,156.00 ", "Rndrng_Prvdr_CCN": 330014.0, "Rndrng_Prvdr_Org_Name": "Jamaica Hospital Medical Center", "Rndrng_Prvdr_St": "89th Avenue And Van Wyck Expressway", "Rndrng_Prvdr_City": "Jamaica", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11418, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 279.0, "CAPC_Srvcs": 300.0, "Avg_Tot_Sbmtd_Chrgs": 11012.6409, "Avg_Mdcr_Alowd_Amt": 2839.228867, "Avg_Mdcr_Pymt_Amt": 2429.700133, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2023, "Income_Household_Median": 90156.0, "lat": 40.6916, "lon": -73.8324}, {"zip_code": 11418, " Income_Household_Median ": " 90,156.00 ", "Rndrng_Prvdr_CCN": 330014.0, "Rndrng_Prvdr_Org_Name": "Jamaica Hospital Medical Center", "Rndrng_Prvdr_St": "89th Avenue And Van Wyck Expressway", "Rndrng_Prvdr_City": "Jamaica", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11418, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 62.0, "CAPC_Srvcs": 67.0, "Avg_Tot_Sbmtd_Chrgs": 8592.578209, "Avg_Mdcr_Alowd_Amt": 2779.518955, "Avg_Mdcr_Pymt_Amt": 2212.628358, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2018, "Income_Household_Median": 90156.0, "lat": 40.6916, "lon": -73.8324}, {"zip_code": 11418, " Income_Household_Median ": " 90,156.00 ", "Rndrng_Prvdr_CCN": 330014.0, "Rndrng_Prvdr_Org_Name": "Jamaica Hospital Medical Center", "Rndrng_Prvdr_St": "89th Avenue And Van Wyck Expressway", "Rndrng_Prvdr_City": "Jamaica", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11418, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 312.0, "CAPC_Srvcs": 336.0, "Avg_Tot_Sbmtd_Chrgs": 9517.412768, "Avg_Mdcr_Alowd_Amt": 2768.13878, "Avg_Mdcr_Pymt_Amt": 2199.514821, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2019, "Income_Household_Median": 90156.0, "lat": 40.6916, "lon": -73.8324}, {"zip_code": 11418, " Income_Household_Median ": " 90,156.00 ", "Rndrng_Prvdr_CCN": 330014.0, "Rndrng_Prvdr_Org_Name": "Jamaica Hospital Medical Center", "Rndrng_Prvdr_St": "89th Avenue And Van Wyck Expressway", "Rndrng_Prvdr_City": "Jamaica", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11418, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 187.0, "CAPC_Srvcs": 197.0, "Avg_Tot_Sbmtd_Chrgs": 9538.289949, "Avg_Mdcr_Alowd_Amt": 2641.581015, "Avg_Mdcr_Pymt_Amt": 2329.951878, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2020, "Income_Household_Median": 90156.0, "lat": 40.6916, "lon": -73.8324}, {"zip_code": 11418, " Income_Household_Median ": " 90,156.00 ", "Rndrng_Prvdr_CCN": 330014.0, "Rndrng_Prvdr_Org_Name": "Jamaica Hospital Medical Center", "Rndrng_Prvdr_St": "89th Avenue And Van Wyck Expressway", "Rndrng_Prvdr_City": "Jamaica", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11418, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 207.0, "CAPC_Srvcs": 216.0, "Avg_Tot_Sbmtd_Chrgs": 10052.83042, "Avg_Mdcr_Alowd_Amt": 2737.481944, "Avg_Mdcr_Pymt_Amt": 2709.286296, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2021, "Income_Household_Median": 90156.0, "lat": 40.6916, "lon": -73.8324}, {"zip_code": 11418, " Income_Household_Median ": " 90,156.00 ", "Rndrng_Prvdr_CCN": 330014.0, "Rndrng_Prvdr_Org_Name": "Jamaica Hospital Medical Center", "Rndrng_Prvdr_St": "89th Avenue And Van Wyck Expressway", "Rndrng_Prvdr_City": "Jamaica", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11418, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 222.0, "CAPC_Srvcs": 236.0, "Avg_Tot_Sbmtd_Chrgs": 10108.32911, "Avg_Mdcr_Alowd_Amt": 2753.065508, "Avg_Mdcr_Pymt_Amt": 2731.622627, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2022, "Income_Household_Median": 90156.0, "lat": 40.6916, "lon": -73.8324}, {"zip_code": 11432, " Income_Household_Median ": " 74,096.00 ", "Rndrng_Prvdr_CCN": 330231.0, "Rndrng_Prvdr_Org_Name": "Queens Hospital Center", "Rndrng_Prvdr_St": "82-68 164th Street", "Rndrng_Prvdr_City": "Jamaica", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11432, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 115.0, "CAPC_Srvcs": 135.0, "Avg_Tot_Sbmtd_Chrgs": 14398.87252, "Avg_Mdcr_Alowd_Amt": 2836.652444, "Avg_Mdcr_Pymt_Amt": 2263.124741, "Outlier_Srvcs": 0.0, "Avg_Mdcr_Outlier_Amt": 0.0, "Year": 2023, "Income_Household_Median": 74096.0, "lat": 40.705, "lon": -73.7952}, {"zip_code": 11432, " Income_Household_Median ": " 74,096.00 ", "Rndrng_Prvdr_CCN": 330231.0, "Rndrng_Prvdr_Org_Name": "Queens Hospital Center", "Rndrng_Prvdr_St": "82-68 164th Street", "Rndrng_Prvdr_City": "Jamaica", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11432, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 75.0, "CAPC_Srvcs": 79.0, "Avg_Tot_Sbmtd_Chrgs": 10606.91975, "Avg_Mdcr_Alowd_Amt": 2779.731519, "Avg_Mdcr_Pymt_Amt": 2202.17519, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2018, "Income_Household_Median": 74096.0, "lat": 40.705, "lon": -73.7952}, {"zip_code": 11432, " Income_Household_Median ": " 74,096.00 ", "Rndrng_Prvdr_CCN": 330231.0, "Rndrng_Prvdr_Org_Name": "Queens Hospital Center", "Rndrng_Prvdr_St": "82-68 164th Street", "Rndrng_Prvdr_City": "Jamaica", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11432, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 100.0, "CAPC_Srvcs": 113.0, "Avg_Tot_Sbmtd_Chrgs": 12366.62637, "Avg_Mdcr_Alowd_Amt": 2820.722478, "Avg_Mdcr_Pymt_Amt": 2231.340885, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2019, "Income_Household_Median": 74096.0, "lat": 40.705, "lon": -73.7952}, {"zip_code": 11432, " Income_Household_Median ": " 74,096.00 ", "Rndrng_Prvdr_CCN": 330231.0, "Rndrng_Prvdr_Org_Name": "Queens Hospital Center", "Rndrng_Prvdr_St": "82-68 164th Street", "Rndrng_Prvdr_City": "Jamaica", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11432, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 86.0, "CAPC_Srvcs": 96.0, "Avg_Tot_Sbmtd_Chrgs": 15351.78635, "Avg_Mdcr_Alowd_Amt": 2649.323646, "Avg_Mdcr_Pymt_Amt": 2464.851458, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2020, "Income_Household_Median": 74096.0, "lat": 40.705, "lon": -73.7952}, {"zip_code": 11432, " Income_Household_Median ": " 74,096.00 ", "Rndrng_Prvdr_CCN": 330231.0, "Rndrng_Prvdr_Org_Name": "Queens Hospital Center", "Rndrng_Prvdr_St": "82-68 164th Street", "Rndrng_Prvdr_City": "Jamaica", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11432, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 79.0, "CAPC_Srvcs": 89.0, "Avg_Tot_Sbmtd_Chrgs": 15424.96708, "Avg_Mdcr_Alowd_Amt": 2768.24, "Avg_Mdcr_Pymt_Amt": 2558.762247, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2021, "Income_Household_Median": 74096.0, "lat": 40.705, "lon": -73.7952}, {"zip_code": 11432, " Income_Household_Median ": " 74,096.00 ", "Rndrng_Prvdr_CCN": 330231.0, "Rndrng_Prvdr_Org_Name": "Queens Hospital Center", "Rndrng_Prvdr_St": "82-68 164th Street", "Rndrng_Prvdr_City": "Jamaica", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11432, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 99.0, "CAPC_Srvcs": 107.0, "Avg_Tot_Sbmtd_Chrgs": 15260.51879, "Avg_Mdcr_Alowd_Amt": 2611.857383, "Avg_Mdcr_Pymt_Amt": 2292.175888, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2022, "Income_Household_Median": 74096.0, "lat": 40.705, "lon": -73.7952}, {"zip_code": 11691, " Income_Household_Median ": " 56,135.00 ", "Rndrng_Prvdr_CCN": 330395.0, "Rndrng_Prvdr_Org_Name": "St John's Episcopal Hospital At South Shore", "Rndrng_Prvdr_St": "327 Beach 19th Street", "Rndrng_Prvdr_City": "Far Rockaway", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11691, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 99.0, "CAPC_Srvcs": 103.0, "Avg_Tot_Sbmtd_Chrgs": 22898.7066, "Avg_Mdcr_Alowd_Amt": 2857.096893, "Avg_Mdcr_Pymt_Amt": 2271.856893, "Outlier_Srvcs": null, "Avg_Mdcr_Outlier_Amt": null, "Year": 2023, "Income_Household_Median": 56135.0, "lat": 40.6015, "lon": -73.7563}, {"zip_code": 11691, " Income_Household_Median ": " 56,135.00 ", "Rndrng_Prvdr_CCN": 330395.0, "Rndrng_Prvdr_Org_Name": "St John's Episcopal Hospital At South Shore", "Rndrng_Prvdr_St": "327 Beach 19th Street", "Rndrng_Prvdr_City": "Far Rockaway", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11691, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 327.0, "CAPC_Srvcs": 361.0, "Avg_Tot_Sbmtd_Chrgs": 19730.07194, "Avg_Mdcr_Alowd_Amt": 2757.978116, "Avg_Mdcr_Pymt_Amt": 2194.595014, "Outlier_Srvcs": 122.0, "Avg_Mdcr_Outlier_Amt": 1611.211815, "Year": 2018, "Income_Household_Median": 56135.0, "lat": 40.6015, "lon": -73.7563}, {"zip_code": 11691, " Income_Household_Median ": " 56,135.00 ", "Rndrng_Prvdr_CCN": 330395.0, "Rndrng_Prvdr_Org_Name": "St John's Episcopal Hospital At South Shore", "Rndrng_Prvdr_St": "327 Beach 19th Street", "Rndrng_Prvdr_City": "Far Rockaway", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11691, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 331.0, "CAPC_Srvcs": 373.0, "Avg_Tot_Sbmtd_Chrgs": 25504.53909, "Avg_Mdcr_Alowd_Amt": 2814.409866, "Avg_Mdcr_Pymt_Amt": 2239.441314, "Outlier_Srvcs": 127.0, "Avg_Mdcr_Outlier_Amt": 1904.292247, "Year": 2019, "Income_Household_Median": 56135.0, "lat": 40.6015, "lon": -73.7563}, {"zip_code": 11691, " Income_Household_Median ": " 56,135.00 ", "Rndrng_Prvdr_CCN": 330395.0, "Rndrng_Prvdr_Org_Name": "St John's Episcopal Hospital At South Shore", "Rndrng_Prvdr_St": "327 Beach 19th Street", "Rndrng_Prvdr_City": "Far Rockaway", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11691, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 273.0, "CAPC_Srvcs": 301.0, "Avg_Tot_Sbmtd_Chrgs": 25528.10787, "Avg_Mdcr_Alowd_Amt": 2655.773023, "Avg_Mdcr_Pymt_Amt": 2120.384485, "Outlier_Srvcs": 153.0, "Avg_Mdcr_Outlier_Amt": 2571.093124, "Year": 2020, "Income_Household_Median": 56135.0, "lat": 40.6015, "lon": -73.7563}, {"zip_code": 11691, " Income_Household_Median ": " 56,135.00 ", "Rndrng_Prvdr_CCN": 330395.0, "Rndrng_Prvdr_Org_Name": "St John's Episcopal Hospital At South Shore", "Rndrng_Prvdr_St": "327 Beach 19th Street", "Rndrng_Prvdr_City": "Far Rockaway", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11691, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 404.0, "CAPC_Srvcs": 504.0, "Avg_Tot_Sbmtd_Chrgs": 25168.82103, "Avg_Mdcr_Alowd_Amt": 2759.451984, "Avg_Mdcr_Pymt_Amt": 2205.393948, "Outlier_Srvcs": 162.0, "Avg_Mdcr_Outlier_Amt": 2144.118457, "Year": 2021, "Income_Household_Median": 56135.0, "lat": 40.6015, "lon": -73.7563}, {"zip_code": 11691, " Income_Household_Median ": " 56,135.00 ", "Rndrng_Prvdr_CCN": 330395.0, "Rndrng_Prvdr_Org_Name": "St John's Episcopal Hospital At South Shore", "Rndrng_Prvdr_St": "327 Beach 19th Street", "Rndrng_Prvdr_City": "Far Rockaway", "Rndrng_Prvdr_State_Abrvtn": "NY", "Rndrng_Prvdr_State_FIPS": 36.0, "Rndrng_Prvdr_Zip5": 11691, "Rndrng_Prvdr_RUCA": 1.0, "Rndrng_Prvdr_RUCA_Desc": "Metropolitan area core: primary flow within an urbanized area of 50,000 and greater", "APC_Cd": 8011.0, "APC_Desc": "Comprehensive Observation Services", "Bene_Cnt": 213.0, "CAPC_Srvcs": 247.0, "Avg_Tot_Sbmtd_Chrgs": 25183.87749, "Avg_Mdcr_Alowd_Amt": 2791.359474, "Avg_Mdcr_Pymt_Amt": 2229.005466, "Outlier_Srvcs": 94.0, "Avg_Mdcr_Outlier_Amt": 2792.256748, "Year": 2022, "Income_Household_Median": 56135.0, "lat": 40.6015, "lon": -73.7563}];
+
+// ── CITY COLOR PALETTE ──
+const CITY_COLORS = {
+  'Bronx':         '#f43f5e',
+  'Brooklyn':      '#3b82f6',
+  'Elmhurst':      '#14b8a6',
+  'Far Rockaway':  '#a78bfa',
+  'Flushing':      '#f59e0b',
+  'Jamaica':       '#22c55e',
+  'New York':      '#60a5fa',
+  'Staten Island': '#fb923c'
+};
+const CITY_LIST = Object.keys(CITY_COLORS);
+function cityColor(c) { return CITY_COLORS[c] || '#94a3b8'; }
+
+// ── PLOTLY SHARED LAYOUT BASE ──
+const BASE_LAYOUT = {
+  paper_bgcolor: 'rgba(0,0,0,0)',
+  plot_bgcolor:  'rgba(0,0,0,0)',
+  font:   { color: '#94a3b8', size: 11, family: 'Segoe UI, system-ui, sans-serif' },
+  margin: { t: 24, b: 80, l: 68, r: 16 },
+  xaxis:  {
+    tickangle: -45, tickfont: { size: 8, color: '#dde8f5' },
+    gridcolor: 'rgba(255,255,255,0.04)', linecolor: '#1e293b', showgrid: false
+  },
+  yaxis:  {
+    gridcolor: 'rgba(255,255,255,0.06)', linecolor: '#1e293b',
+    tickfont: { size: 10, color: '#64748b' }, tickformat: '$,.0f'
+  },
+  hoverlabel: {
+    bgcolor: '#0f172a', bordercolor: '#334155',
+    font: { color: '#e2e8f0', size: 12 }
+  },
+  showlegend: false,
+  dragmode: 'select'
+};
+const CFG = { responsive: true, displayModeBar: false };
+
+// ── STATE ──
+let selectedKeys = new Set();   // "City||Provider" keys from brush
+let isBrushing   = false;
+
+// ── HELPERS ──
+function fmtM(v) {
+  if (v == null) return '—';
+  if (v >= 1e6) return '$' + (v/1e6).toFixed(2) + 'M';
+  if (v >= 1e3) return '$' + (v/1e3).toFixed(1)  + 'K';
+  return '$' + v.toFixed(0);
+}
+function avg(arr) {
+  const v = arr.filter(x => x != null);
+  return v.length ? v.reduce((a,b)=>a+b,0)/v.length : null;
+}
+function comboKey(d) { return d.Rndrng_Prvdr_City + '||' + d.Rndrng_Prvdr_Org_Name; }
+
+// ── FILTER DATA ──
+function getFiltered() {
+  const yr   = document.getElementById('fYear').value;
+  const city = document.getElementById('fCity').value;
+  return RAW.filter(d => {
+    if (yr   !== 'all' && d.Year !== parseInt(yr)) return false;
+    if (city !== 'all' && d.Rndrng_Prvdr_City !== city) return false;
+    return true;
+  });
+}
+
+// ── AGGREGATE: group by city+provider, mean of financials, sum of bene ──
+function aggregate(data) {
+  const map = {};
+  for (const d of data) {
+    const k = comboKey(d);
+    if (!map[k]) map[k] = {
+      city: d.Rndrng_Prvdr_City,
+      org:  d.Rndrng_Prvdr_Org_Name,
+      zip:  d.Rndrng_Prvdr_Zip5,
+      lat:  d.lat, lon: d.lon,
+      income: d.Income_Household_Median,
+      charges: [], payments: [], benes: [], years: {}
+    };
+    map[k].charges.push(d.Avg_Tot_Sbmtd_Chrgs);
+    map[k].payments.push(d.Avg_Mdcr_Pymt_Amt);
+    map[k].benes.push(d.Bene_Cnt);
+    const y = d.Year;
+    map[k].years[y] = (map[k].years[y] || 0) + d.Bene_Cnt;
+  }
+  return Object.entries(map).map(([k, v]) => ({
+    key:      k,
+    city:     v.city,
+    org:      v.org,
+    zip:      v.zip,
+    lat:      v.lat,
+    lon:      v.lon,
+    income:   v.income,
+    charge:   avg(v.charges),
+    payment:  avg(v.payments),
+    gap:      avg(v.charges) - avg(v.payments),
+    bene:     v.benes.reduce((a,b)=>a+b,0),
+    years:    v.years
+  }));
+}
+
+// ── KPIs ──
+// agg: full aggregated array (all providers in current global filter)
+// When selectedKeys has items, filter agg to only brushed providers
+function updateKPIs(agg) {
+  const isSelection = selectedKeys.size > 0;
+
+  // Determine which providers to show in KPIs
+  const display = isSelection
+    ? agg.filter(d => selectedKeys.has(d.key))
+    : agg;
+
+  const ch = display.map(d => d.charge).filter(x => x != null && isFinite(x));
+  const py = display.map(d => d.payment).filter(x => x != null && isFinite(x));
+  const gp = display.map(d => d.gap).filter(x => x != null && isFinite(x));
+
+  const newRec    = display.length;
+  const newCharge = fmtM(ch.length ? ch.reduce((a,b)=>a+b,0)/ch.length : null);
+  const newPay    = fmtM(py.length ? py.reduce((a,b)=>a+b,0)/py.length : null);
+  const newGap    = fmtM(gp.length ? gp.reduce((a,b)=>a+b,0)/gp.length : null);
+
+  // Update values with pulse animation
+  function setWithPulse(id, val) {
+    const el = document.getElementById(id);
+    if (el.textContent !== String(val)) {
+      el.classList.remove('updating');
+      void el.offsetWidth; // force reflow to restart animation
+      el.textContent = val;
+      el.classList.add('updating');
+    }
+  }
+
+  setWithPulse('kRecords', newRec);
+  setWithPulse('kCharge',  newCharge);
+  setWithPulse('kPay',     newPay);
+  setWithPulse('kGap',     newGap);
+
+  // Update sub-labels
+  const subLabel = isSelection
+    ? `${selectedKeys.size} hospital${selectedKeys.size > 1 ? 's' : ''} selected`
+    : 'Full dataset';
+  document.getElementById('kRecordsSub').textContent = isSelection ? `${selectedKeys.size} brushed` : 'Current filter';
+  document.getElementById('kChargeSub').textContent  = isSelection ? subLabel : 'Per Hospital';
+  document.getElementById('kPaySub').textContent     = isSelection ? subLabel : 'Per Hospital';
+  document.getElementById('kGapSub').textContent     = isSelection ? subLabel : 'Charges − Payment';
+
+  // Toggle KPI row visual state
+  const kpiRow = document.querySelector('.kpi-row');
+  if (isSelection) {
+    kpiRow.classList.add('selection-active');
+  } else {
+    kpiRow.classList.remove('selection-active');
+  }
+}
+
+// ── OPACITY HELPER ──
+function opacity(key) {
+  if (selectedKeys.size === 0) return 1;
+  return selectedKeys.has(key) ? 1 : 0.12;
+}
+
+// ── SHARED LABEL ABBREVIATOR ──
+function abbrevOrg(name) {
+    let s = name
+      .replace(/\b(Hospital|Medical|Center)\b/gi, '')
+      .replace(/\bUniversity\b/gi, 'Univ')
+      .replace(/\bMemorial\b/gi, 'Mem')
+      .replace(/\bEpiscopal\b/gi, 'Epis')
+      .replace(/\bCommunity\b/gi, 'Com')
+      .replace(/\bHeights\b/gi, 'Hts')
+      .replace(/\bBrooklyn\b/gi, 'Bklyn')
+      .replace(/\bMontefiore\b/gi, 'Montefi')
+      .replace(/\bMaimonides\b/gi, 'Maimoni')
+      .replace(/\bMetropolitan\b/gi, 'Metro')
+      .replace(/\bDowntown\b/gi, 'DT')
+      .replace(/\bCampus\b/gi, '')
+      .replace(/\bRichmond\b/gi, 'Richmd')
+      .replace(/\bKingsbrook\b/gi, 'Kbk')
+      .replace(/\bWyckoff\b/gi, 'Wyck')
+      .replace(/\bElmhurst\b/gi, 'Elmh')
+      .replace(/\bFlushing\b/gi, 'Flush')
+      .replace(/\bDownstate\b/gi, 'DS')
+      .replace(/\bMental\s+Health\b/gi, 'MH')
+      .replace(/\bSouth\s+Shore\b/gi, 'SS')
+      .replace(/\bSouth\s+Brooklyn\b/gi, 'S.Bkln')
+      .replace(/\bLincoln\b/gi, 'Linc')
+      .replace(/\bJewish\b/gi, 'Jwsh')
+      .replace(/\bSt\.?\s+John'?s?\b/gi, 'StJ')
+      .replace(/\bCancer\s+And\s+Allied\s+Diseases\b/gi, '(Cancer)')
+      .replace(/\bFor\s+Cancer\b/gi, '(Ca)')
+      .replace(/\bAt\s+South\s+Shore\b/gi, 'SS')
+      .replace(/\bMount\s+Sinai\b/gi, 'Mt.Sinai')
+      .replace(/\bHealth\s+Science\b/gi, 'HS')
+      .replace(/\bSuny\b/gi, 'SUNY')
+      .replace(/\bLangone\b/gi, 'Lang')
+      .replace(/\bNyu\b/gi, 'NYU')
+      .replace(/\bBellevue\b/gi, 'Bellev')
+      .replace(/\bBrookdale\b/gi, 'Brkdl')
+      .replace(/\bQueens\b/gi, 'Qns')
+      .replace(/\bJamaica\b/gi, 'Jam')
+      .replace(/,\s*Inc\./gi, '')
+      .replace(/\(\s*\)/g, '')
+      .replace(/\s+/g, ' ').trim();
+  return s;
+}
+
+// ─────────────────────────────────────────
+//  CHART 1 — STACKED BAR
+// ─────────────────────────────────────────
+function drawC1(agg) {
+  // Sort by Avg_Tot_Sbmtd_Chrgs desc
+  const sorted = [...agg].sort((a,b) => b.charge - a.charge);
+  const labels = sorted.map(d => abbrevOrg(d.org));
+  const fullLabels = sorted.map(d => d.city + ' · ' + d.org);
+
+  const chargeTrace = {
+    type: 'bar', name: 'Submitted Charges',
+    x: labels,
+    y: sorted.map(d => d.charge),
+    marker: {
+      color: sorted.map(d => cityColor(d.city)),
+      opacity: sorted.map(d => opacity(d.key)),
+      line: { color: 'rgba(255,255,255,0.07)', width: 0.5 }
+    },
+    customdata: sorted.map(d => [d.city, d.org, d.charge, d.payment, d.key]),
+    hovertemplate: '<b>%{customdata[1]}</b><br>Borough: %{customdata[0]}<br>Submitted: %{y:$,.0f}<extra></extra>',
+    offsetgroup: 0
+  };
+  const payTrace = {
+    type: 'bar', name: 'Medicare Payment',
+    x: labels,
+    y: sorted.map(d => d.payment),
+    marker: {
+      color: sorted.map(d => cityColor(d.city)),
+      opacity: sorted.map(d => Math.min(opacity(d.key) * 0.55, 0.55)),
+      pattern: { shape: '/', size: 4, fgcolor: 'rgba(255,255,255,0.15)' },
+      line: { color: 'rgba(255,255,255,0.05)', width: 0.5 }
+    },
+    customdata: sorted.map(d => [d.city, d.org, d.charge, d.payment, d.key]),
+    hovertemplate: '<b>%{customdata[1]}</b><br>Medicare Pmt: %{y:$,.0f}<extra></extra>',
+    offsetgroup: 0, base: 0
+  };
+
+  // Borough color legend traces (invisible markers, legend only)
+  const boroughLegendTraces = CITY_LIST.map(city => ({
+    type: 'scatter', mode: 'markers',
+    name: city,
+    x: [null], y: [null],
+    marker: { color: cityColor(city), size: 6, symbol: 'circle' },
+    showlegend: true,
+    legendgroup: 'boroughs'
+  }));
+
+  const layout = {
+    ...BASE_LAYOUT,
+    barmode: 'overlay',
+    yaxis: { ...BASE_LAYOUT.yaxis, title: { text: 'Avg Charges ($)', font:{size:10,color:'#64748b'} } },
+    margin: { t: 44, b: 95, l: 72, r: 10 },
+    showlegend: true,
+    legend: {
+      orientation: 'h', x: 0, xanchor: 'left', y: 1.13, yanchor: 'bottom',
+      font: { size: 7, color: '#94a3b8' },
+      bgcolor: 'rgba(0,0,0,0)',
+      traceorder: 'normal',
+      itemwidth: 30,
+      tracegroupgap: 4
+    }
+  };
+
+  Plotly.react('c1', [chargeTrace, payTrace, ...boroughLegendTraces], layout, CFG);
+
+  document.getElementById('c1').on('plotly_selected', ev => {
+    if (!ev || !ev.points || !ev.points.length) { selectedKeys.clear(); }
+    else {
+      selectedKeys.clear();
+      ev.points.forEach(p => selectedKeys.add(p.customdata[4]));
+    }
+    updateSelBadge();
+    redrawAll(getFiltered());
+  });
+  document.getElementById('c1').on('plotly_deselect', () => {
+    selectedKeys.clear(); updateSelBadge(); redrawAll(getFiltered());
+  });
+}
+
+// ─────────────────────────────────────────
+//  CHART 2 — SCATTER (Gap)
+// ─────────────────────────────────────────
+function drawC2(agg) {
+  // Sort: Avg_Tot_Sbmtd_Chrgs desc, then city
+  const sorted = [...agg].sort((a,b) => b.charge - a.charge || a.city.localeCompare(b.city));
+  const labels = sorted.map(d => abbrevOrg(d.org));
+
+  const trace = {
+    type: 'scatter', mode: 'markers',
+    x: labels,
+    y: sorted.map(d => d.gap),
+    marker: {
+      color: sorted.map(d => cityColor(d.city)),
+      opacity: sorted.map(d => opacity(d.key)),
+      size: sorted.map(d => Math.max(7, Math.min(24, d.bene / 80))),
+      line: { color: 'rgba(255,255,255,0.15)', width: 1 }
+    },
+    customdata: sorted.map(d => [d.city, d.org, d.charge, d.payment, d.gap, d.key]),
+    hovertemplate: '<b>%{customdata[1]}</b><br>Borough: %{customdata[0]}<br>Charge: %{customdata[2]:$,.0f}<br>Payment: %{customdata[3]:$,.0f}<br>Gap: %{customdata[4]:$,.0f}<extra></extra>'
+  };
+
+  // Borough color legend traces (invisible markers, legend only)
+  const boroughLegendTraces2 = CITY_LIST.map(city => ({
+    type: 'scatter', mode: 'markers',
+    name: city,
+    x: [null], y: [null],
+    marker: { color: cityColor(city), size: 6, symbol: 'circle' },
+    showlegend: true,
+    legendgroup: 'boroughs2'
+  }));
+
+  const layout = {
+    ...BASE_LAYOUT,
+    margin: { t: 44, b: 95, l: 72, r: 10 },
+    yaxis: { ...BASE_LAYOUT.yaxis, title: { text: 'Payment Gap ($)', font:{size:10,color:'#64748b'} } },
+    showlegend: true,
+    legend: {
+      orientation: 'h', x: 0, xanchor: 'left', y: 1.13, yanchor: 'bottom',
+      font: { size: 7, color: '#94a3b8' },
+      bgcolor: 'rgba(0,0,0,0)',
+      traceorder: 'normal',
+      itemwidth: 30,
+      tracegroupgap: 4
+    }
+  };
+
+  Plotly.react('c2', [trace, ...boroughLegendTraces2], layout, CFG);
+
+  document.getElementById('c2').on('plotly_selected', ev => {
+    if (!ev || !ev.points || !ev.points.length) { selectedKeys.clear(); }
+    else {
+      selectedKeys.clear();
+      ev.points.forEach(p => selectedKeys.add(p.customdata[5]));
+    }
+    updateSelBadge();
+    redrawAll(getFiltered());
+  });
+  document.getElementById('c2').on('plotly_deselect', () => {
+    selectedKeys.clear(); updateSelBadge(); redrawAll(getFiltered());
+  });
+}
+
+// ─────────────────────────────────────────
+//  CHART 3 — LINE (Bene by Year & City)
+// ─────────────────────────────────────────
+function drawC3(filteredRaw) {
+  // Aggregate by city + year
+  const map = {};
+  for (const d of filteredRaw) {
+    const city = d.Rndrng_Prvdr_City;
+    const yr   = d.Year;
+    const key  = d.Rndrng_Prvdr_City + '||' + d.Rndrng_Prvdr_Org_Name;
+    // If brushing, filter to selected providers
+    if (selectedKeys.size > 0 && !selectedKeys.has(key)) continue;
+    if (!map[city]) map[city] = {};
+    map[city][yr] = (map[city][yr] || 0) + d.Bene_Cnt;
+  }
+
+  const traces = Object.entries(map).map(([city, yearMap]) => {
+    const years  = Object.keys(yearMap).map(Number).sort();
+    const values = years.map(y => yearMap[y]);
+    const op = (selectedKeys.size === 0) ? 1 : 1;
+    return {
+      type: 'scatter', mode: 'lines+markers',
+      name: city,
+      x: years, y: values,
+      line:   { color: cityColor(city), width: 2.5 },
+      marker: { color: cityColor(city), size: 7, line:{color:'rgba(255,255,255,.3)',width:1} },
+      hovertemplate: `<b>${city}</b><br>Year: %{x}<br>Patients: %{y:,.0f}<extra></extra>`
+    };
+  });
+
+  const layout = {
+    ...BASE_LAYOUT,
+    margin: { t: 20, b: 40, l: 70, r: 10 },
+    xaxis: { ...BASE_LAYOUT.xaxis, tickangle: 0, dtick: 1, tickformat: 'd', title:{text:'Year',font:{size:10,color:'#64748b'}} },
+    yaxis: { ...BASE_LAYOUT.yaxis, tickformat: ',.0f', title:{text:'Patient Count',font:{size:10,color:'#64748b'}} },
+    showlegend: true,
+    legend: { orientation:'h', x:0, xanchor:'left', y:1.13, yanchor:'bottom', font:{size:7,color:'#94a3b8'}, bgcolor:'rgba(0,0,0,0)', itemwidth:30, tracegroupgap:4 },
+    dragmode: 'pan'
+  };
+
+  Plotly.react('c3', traces.length ? traces : [{type:'scatter',x:[],y:[]}], layout, CFG);
+
+  // C3: clicking a borough line segment updates KPIs to that borough's providers
+  document.getElementById('c3').on('plotly_click', ev => {
+    if (!ev || !ev.points || !ev.points.length) return;
+    const clickedCity = ev.points[0].data.name; // borough name = trace name
+    if (!clickedCity) return;
+
+    // Build selectedKeys from all providers in this city (within current filter)
+    const filteredRaw = getFiltered();
+    const cityKeys = new Set();
+    for (const d of filteredRaw) {
+      if (d.Rndrng_Prvdr_City === clickedCity) {
+        cityKeys.add(d.Rndrng_Prvdr_City + '||' + d.Rndrng_Prvdr_Org_Name);
+      }
+    }
+
+    // Toggle: if we already have exactly these keys selected, clear (deselect)
+    const alreadySelected = cityKeys.size > 0 && [...cityKeys].every(k => selectedKeys.has(k)) && selectedKeys.size === cityKeys.size;
+    if (alreadySelected) {
+      selectedKeys.clear();
+    } else {
+      selectedKeys.clear();
+      cityKeys.forEach(k => selectedKeys.add(k));
+    }
+    updateSelBadge();
+    redrawAll(filteredRaw);
+  });
+
+  document.getElementById('c3').on('plotly_doubleclick', () => {
+    selectedKeys.clear(); updateSelBadge(); redrawAll(getFiltered());
+  });
+}
+
+// ─────────────────────────────────────────
+//  CHART 4 — SCATTER MAPBOX
+// ─────────────────────────────────────────
+function drawC4(agg) {
+  // Aggregate by zip
+  const zipMap = {};
+  for (const d of agg) {
+    if (!d.lat || !d.lon) continue;
+    const k = d.zip;
+    if (!zipMap[k]) zipMap[k] = { lat: d.lat, lon: d.lon, city: d.city, charges: [], keys: [] };
+    zipMap[k].charges.push(d.charge);
+    zipMap[k].keys.push(d.key);
+  }
+
+  const zips = Object.values(zipMap).filter(z => z.charges.length > 0);
+  const vals  = zips.map(z => z.charges.reduce((a,b)=>a+b,0)/z.charges.length);
+  const maxV  = Math.max(...vals, 1);
+
+  const opacities = zips.map(z => {
+    if (selectedKeys.size === 0) return 0.85;
+    const hit = z.keys.some(k => selectedKeys.has(k));
+    return hit ? 0.95 : 0.15;
+  });
+
+  const trace = {
+    type: 'scattermapbox',
+    lat:  zips.map(z => z.lat),
+    lon:  zips.map(z => z.lon),
+    mode: 'markers',
+    marker: {
+      size:    vals.map(v => 10 + 32 * (v/maxV)),
+      color:   vals,
+      colorscale: [
+        [0,    '#1e3a5f'],
+        [0.25, '#1d4ed8'],
+        [0.5,  '#3b82f6'],
+        [0.75, '#8b5cf6'],
+        [1,    '#f43f5e']
+      ],
+      opacity:    opacities,
+      showscale:  true,
+      colorbar: {
+        title: { text: 'Avg Charges', font:{color:'#94a3b8',size:10} },
+        tickformat: '$,.0f',
+        tickfont: { color:'#94a3b8', size:9 },
+        len: 0.6, x: 1.01
+      }
+    },
+    text: zips.map((z,i) => z.city),
+    customdata: zips.map((z,i) => [z.city, vals[i], z.charges.length]),
+    hovertemplate: '<b>%{customdata[0]}</b><br>Zip: %{text}<br>Avg Charges: %{customdata[1]:$,.0f}<br>Providers: %{customdata[2]}<extra></extra>'
+  };
+
+  const layout = {
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    margin: { t: 0, b: 0, l: 0, r: 0 },
+    mapbox: {
+      style: 'carto-darkmatter',
+      center: { lat: 40.72, lon: -73.95 },
+      zoom: 9.8
+    },
+    showlegend: false
+  };
+
+  Plotly.react('c4', [trace], layout, { ...CFG, scrollZoom: true });
+
+  // C4: clicking a map bubble selects all providers at that zip location
+  document.getElementById('c4').on('plotly_click', ev => {
+    if (!ev || !ev.points || !ev.points.length) return;
+    const ptIdx   = ev.points[0].pointIndex;
+    const zipData = zips[ptIdx];
+    if (!zipData) return;
+
+    const clickedKeys = new Set(zipData.keys);
+    const alreadySelected = clickedKeys.size > 0 &&
+      [...clickedKeys].every(k => selectedKeys.has(k)) &&
+      selectedKeys.size === clickedKeys.size;
+
+    if (alreadySelected) {
+      selectedKeys.clear();
+    } else {
+      selectedKeys.clear();
+      clickedKeys.forEach(k => selectedKeys.add(k));
+    }
+    updateSelBadge();
+    redrawAll(getFiltered());
+  });
+}
+
+// ─────────────────────────────────────────
+//  MAIN RENDER
+// ─────────────────────────────────────────
+function redrawAll(filteredRaw) {
+  const agg = aggregate(filteredRaw);
+  updateKPIs(agg);
+  drawC1(agg);
+  drawC2(agg);
+  drawC3(filteredRaw);
+  drawC4(agg);
+}
+
+// Lightweight: refresh KPIs from current filter state without redrawing charts
+// Used when we need to update KPIs but charts are already current
+function refreshKPIsOnly() {
+  const filteredRaw = getFiltered();
+  const agg = aggregate(filteredRaw);
+  updateKPIs(agg);
+  updateSelBadge();
+}
+
+function updateSelBadge() {
+  const b = document.getElementById('selBadge');
+  if (selectedKeys.size > 0) {
+    b.textContent = selectedKeys.size + ' selected · charts linked';
+    b.classList.add('on');
+  } else {
+    b.classList.remove('on');
+  }
+}
+
+function resetAll() {
+  document.getElementById('fYear').value = 'all';
+  document.getElementById('fCity').value = 'all';
+  selectedKeys.clear();
+  updateSelBadge();
+  redrawAll(RAW);
+}
+
+document.getElementById('fYear').addEventListener('change', () => {
+  selectedKeys.clear(); updateSelBadge(); redrawAll(getFiltered());
+});
+document.getElementById('fCity').addEventListener('change', () => {
+  selectedKeys.clear(); updateSelBadge(); redrawAll(getFiltered());
+});
+
+// Boot
+redrawAll(RAW);
+</script>
+</body>
+</html>
